@@ -1,22 +1,6 @@
-# Binaries
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary
-*.test
-
-# Output of go coverage
-*.out
-
-# Go workspace
-go.work
-go.work.sum
-
-# Dependency directories
-vendor/
+# Build output
+/target/
+/bin/
 
 # IDE
 .idea/
@@ -28,9 +12,3 @@ vendor/
 .DS_Store
 Thumbs.db
 .claude_state.json
-
-# Build output
-/bin/
-/dist/
-/goto-bin
-/chunks/

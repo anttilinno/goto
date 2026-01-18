@@ -58,7 +58,23 @@ _goto_completions() {
 
     # Complete flags
     if [[ "$cur" == -* ]]; then
-        COMPREPLY=($(compgen -W "--export --import --rename --stats --recent --recent-clear --tag --untag --tags --filter --sort --config -l -r -u -p -b -f -c -h -v -x -o" -- "$cur"))
+        COMPREPLY=($(compgen -W "--export --import --rename --stats --recent --recent-clear --tag --untag --tags --filter= --sort= --config -l -r -u -p -c -h -v -x -o" -- "$cur"))
+        return
+    fi
+
+    # Handle --filter= and --sort= completion (value after =)
+    if [[ "$cur" == --filter=* ]]; then
+        local prefix="${cur%%=*}="
+        local val="${cur#*=}"
+        COMPREPLY=($(compgen -W "$(goto-bin --tags-raw 2>/dev/null)" -- "$val"))
+        COMPREPLY=("${COMPREPLY[@]/#/$prefix}")
+        return
+    fi
+    if [[ "$cur" == --sort=* ]]; then
+        local prefix="${cur%%=*}="
+        local val="${cur#*=}"
+        COMPREPLY=($(compgen -W "alpha usage recent" -- "$val"))
+        COMPREPLY=("${COMPREPLY[@]/#/$prefix}")
         return
     fi
 
@@ -66,16 +82,6 @@ _goto_completions() {
         --import)
             # Complete with files
             COMPREPLY=($(compgen -f -- "$cur"))
-            return
-            ;;
-        --filter)
-            # Complete with tags
-            COMPREPLY=($(compgen -W "$(goto-bin --tags-raw 2>/dev/null)" -- "$cur"))
-            return
-            ;;
-        --sort)
-            # Complete with sort options
-            COMPREPLY=($(compgen -W "alpha usage recent" -- "$cur"))
             return
             ;;
         --tag|--untag)
@@ -128,7 +134,7 @@ _goto_completions() {
             ;;
         goto)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=($(compgen -W "--export --import --rename --stats --recent --recent-clear --tag --untag --tags --filter --sort --config -l -r -u -p -x -c -o -v -h" -- "$cur"))
+                COMPREPLY=($(compgen -W "--export --import --rename --stats --recent --recent-clear --tag --untag --tags --filter= --sort= --config -l -r -u -p -x -c -o -v -h" -- "$cur"))
             else
                 COMPREPLY=($(compgen -W "$(goto-bin --names-only 2>/dev/null)" -- "$cur"))
             fi

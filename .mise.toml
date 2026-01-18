@@ -1,3 +1,14 @@
+[tools]
+rust = "latest"
+
 [tasks.build]
 description = "Build the project"
-run = "go build -o bin/goto-bin ."
+run = "cargo build --release && mkdir -p bin && cp target/release/goto-bin bin/"
+
+[tasks.test]
+description = "Run tests"
+run = "cargo test"
+
+[tasks.clean]
+description = "Clean build artifacts"
+run = "cargo clean && rm -rf bin/"

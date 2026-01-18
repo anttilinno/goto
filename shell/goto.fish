@@ -2,7 +2,7 @@
 # Save to ~/.config/fish/functions/goto.fish or source in config.fish
 
 function goto
-    set -l output (goto-bin $argv 2>&1)
+    set -l output (goto-bin $argv)
     set -l exit_code $status
 
     switch "$argv[1]"
@@ -67,8 +67,9 @@ complete -c goto -l untag -d "Remove tag from alias" -ra "(goto-bin --names-only
 complete -c goto -l tags -d "List all tags"
 
 # Filtering and sorting (used with --list)
-complete -c goto -l filter -d "Filter by tag" -xa "(goto-bin --tags-raw 2>/dev/null)"
-complete -c goto -l sort -d "Sort list" -xa "alpha usage recent"
+# Note: These use --filter=<tag> and --sort=<order> format
+complete -c goto -l filter= -d "Filter by tag" -xa "(goto-bin --tags-raw 2>/dev/null)"
+complete -c goto -l sort= -d "Sort list" -xa "alpha usage recent"
 
 # Config
 complete -c goto -l config -d "Show configuration"

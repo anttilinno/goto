@@ -86,8 +86,8 @@ _goto() {
         '--tag[Add tag to alias]'
         '--untag[Remove tag from alias]'
         '--tags[List all tags]'
-        '--filter[Filter by tag]:tag:->tags'
-        '--sort[Sort list]:order:(alpha usage recent)'
+        '--filter=[Filter by tag]:tag:->tags'
+        '--sort=[Sort list]:order:(alpha usage recent)'
         '--config[Show configuration]'
     )
 
