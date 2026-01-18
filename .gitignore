@@ -27,6 +27,7 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
+.claude_state.json
 
 # Build output
 /bin/
