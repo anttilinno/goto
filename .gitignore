@@ -31,3 +31,5 @@ Thumbs.db
 # Build output
 /bin/
 /dist/
+/goto-bin
+/chunks/
