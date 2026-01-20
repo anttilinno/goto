@@ -2,7 +2,7 @@
 
 use crate::commands::import_export::ImportStrategy;
 
-const VERSION: &str = "1.0.0";
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Parsed command-line arguments
 #[derive(Debug)]
