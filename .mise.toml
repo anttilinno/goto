@@ -12,3 +12,42 @@ run = "cargo test"
 [tasks.clean]
 description = "Clean build artifacts"
 run = "cargo clean && rm -rf bin/"
+
+[tasks.release]
+description = "Bump version in Cargo.toml, commit, and create git tag"
+run = """
+#!/usr/bin/env bash
+set -e
+
+VERSION="$1"
+
+if [ -z "$VERSION" ]; then
+  CURRENT=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+  MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+  MINOR=$(echo "$CURRENT" | cut -d. -f2)
+  PATCH=$(echo "$CURRENT" | cut -d. -f3)
+  VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+  echo "Auto-incrementing patch version: $CURRENT -> $VERSION"
+fi
+
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Error: Version must be in format X.Y.Z (e.g., 1.2.0)"
+  exit 1
+fi
+
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Error: Working directory is not clean. Commit or stash changes first."
+  exit 1
+fi
+
+sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+
+cargo check --quiet
+
+git add Cargo.toml
+git commit -m "Bump version to $VERSION"
+git tag -a "v$VERSION" -m "Release v$VERSION"
+
+echo "Released v$VERSION"
+echo "Run 'git push && git push --tags' to publish"
+"""
