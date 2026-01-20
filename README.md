@@ -4,53 +4,28 @@ A Rust implementation of [goto](https://github.com/iridakos/goto) - a shell util
 
 ## Installation
 
-```bash
-# Install with mise (recommended)
-mise run install
+1. Copy `goto-bin` to a directory in your PATH (e.g., `~/.local/bin/`)
+2. Run `goto-bin --install` to set up shell integration
 
-# Or specify options
-mise run install -- --shell=zsh --bin-dir=~/bin --dry-run
+```bash
+# Download or build the binary, then:
+goto-bin --install                    # auto-detect shell
+goto-bin --install --shell=zsh        # specify shell
+goto-bin --install --skip-rc          # don't modify rc file
+goto-bin --install --dry-run          # preview changes
 ```
 
 This will:
-1. Build the binary (if needed)
-2. Copy `goto-bin` to `~/.local/bin/`
-3. Copy shell wrapper to `~/.config/goto/`
-4. Add source line to your shell rc file
+1. Copy shell wrapper to `~/.config/goto/`
+2. Add source line to your shell rc file (unless `--skip-rc`)
 
-### Manual Installation
+### Development Install (with mise)
 
 ```bash
-# Build from source
-cargo build --release
-
-# Copy binary
-cp target/release/goto-bin ~/.local/bin/
-
-# Source the shell script in your rc file
-# Bash: add to ~/.bashrc
-source /path/to/goto/shell/goto.bash
-
-# Zsh: add to ~/.zshrc
-source /path/to/goto/shell/goto.zsh
-
-# Fish: add to ~/.config/fish/config.fish
-source /path/to/goto/shell/goto.fish
+mise run install    # builds binary, copies to ~/.local/bin, sets up shell
 ```
 
-## Uninstallation
-
-```bash
-# Uninstall with mise
-mise run uninstall
-
-# Preview what will be removed
-mise run uninstall -- --dry-run
-```
-
-Note: Your aliases in `~/.config/goto/aliases.toml` are preserved.
-
-### Commands
+## Commands
 
 ```bash
 # Register an alias

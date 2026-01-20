@@ -37,6 +37,30 @@ fn run() -> Result<(), u8> {
             println!("goto version {}", cli::version());
             return Ok(());
         }
+        Command::Install { shell, skip_rc, dry_run } => {
+            use commands::install::{InstallOptions, ShellType};
+
+            let shell_type = match shell {
+                Some(s) => ShellType::from_str(s).map_err(|e| {
+                    eprintln!("{}", e);
+                    3u8
+                })?,
+                None => ShellType::detect().map_err(|e| {
+                    eprintln!("{}", e);
+                    3u8
+                })?,
+            };
+
+            let mut options = InstallOptions::new(shell_type);
+            options.skip_rc = *skip_rc;
+            options.dry_run = *dry_run;
+
+            commands::install::install(&options).map_err(|e| {
+                eprintln!("{}", e);
+                5u8
+            })?;
+            return Ok(());
+        }
         _ => {}
     }
 
@@ -57,7 +81,7 @@ fn run() -> Result<(), u8> {
     })?;
 
     match parsed.command {
-        Command::Help | Command::Version | Command::Config => unreachable!(),
+        Command::Help | Command::Version | Command::Config | Command::Install { .. } => unreachable!(),
 
         Command::List { sort, filter } => {
             commands::list::list_with_options(&db, &config, sort.as_deref(), filter.as_deref())

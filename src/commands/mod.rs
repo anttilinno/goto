@@ -3,6 +3,7 @@
 pub mod cleanup;
 pub mod config;
 pub mod import_export;
+pub mod install;
 pub mod list;
 pub mod navigate;
 pub mod register;

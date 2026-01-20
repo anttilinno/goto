@@ -67,6 +67,11 @@ pub enum Command {
         file: String,
         strategy: ImportStrategy,
     },
+    Install {
+        shell: Option<String>,
+        skip_rc: bool,
+        dry_run: bool,
+    },
 }
 
 /// Parse command-line arguments into a structured Args object
@@ -218,6 +223,12 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             }
         }
 
+        "--install" => Command::Install {
+            shell: find_flag_value(args, "--shell="),
+            skip_rc: args.iter().any(|a| a == "--skip-rc"),
+            dry_run: args.iter().any(|a| a == "--dry-run"),
+        },
+
         _ => {
             if arg.starts_with('-') {
                 return Err(format!("Unknown option: {}", arg));
@@ -274,6 +285,7 @@ Usage:
   goto --export                   Export aliases to TOML (stdout)
   goto --import <file>            Import aliases from TOML file
   goto --config                   Show current configuration
+  goto --install                  Install shell integration
   goto -v                         Show version
   goto -h                         Show this help
 
@@ -289,6 +301,11 @@ Import strategies (use with --import):
   --strategy=skip                 Skip existing aliases (default)
   --strategy=overwrite            Overwrite existing aliases
   --strategy=rename               Rename conflicting aliases (add suffix)
+
+Install options (use with --install):
+  --shell=bash|zsh|fish           Shell to configure (auto-detects from $SHELL)
+  --skip-rc                       Don't modify shell rc file
+  --dry-run                       Show what would be done without making changes
 
 Tag rules:
   - Tags are case-insensitive (stored lowercase)
