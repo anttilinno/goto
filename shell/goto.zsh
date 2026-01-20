@@ -111,4 +111,9 @@ _goto() {
     esac
 }
 
+# Ensure completion system is loaded
+if ! type compdef &>/dev/null; then
+    autoload -Uz compinit && compinit
+fi
+
 compdef _goto goto
