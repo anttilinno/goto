@@ -12,3 +12,6 @@
 .DS_Store
 Thumbs.db
 .claude_state.json
+
+# Agents
+chunks/
