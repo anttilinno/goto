@@ -1,4 +1,5 @@
 [tools]
+bats = "latest"
 rust = "latest"
 
 [tasks.build]
@@ -50,4 +51,258 @@ git tag -a "v$VERSION" -m "Release v$VERSION"
 
 echo "Released v$VERSION"
 echo "Run 'git push && git push --tags' to publish"
+'''
+
+[tasks.install]
+description = "Install goto binary and shell integration"
+run = '''
+#!/usr/bin/env bash
+set -e
+
+# Default values
+SHELL_TYPE=""
+BIN_DIR="$HOME/.local/bin"
+DRY_RUN=false
+SCRIPT_DIR="${MISE_PROJECT_ROOT:-$(pwd)}"
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --shell=*)
+      SHELL_TYPE="${1#*=}"
+      shift
+      ;;
+    --bin-dir=*)
+      BIN_DIR="${1#*=}"
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: mise run install [--shell=bash|zsh|fish] [--bin-dir=PATH] [--dry-run]"
+      exit 1
+      ;;
+  esac
+done
+
+# Auto-detect shell if not specified
+if [ -z "$SHELL_TYPE" ]; then
+  SHELL_TYPE=$(basename "$SHELL")
+  if [[ ! "$SHELL_TYPE" =~ ^(bash|zsh|fish)$ ]]; then
+    echo "Error: Could not auto-detect shell. Please specify --shell=bash|zsh|fish"
+    exit 1
+  fi
+fi
+
+# Validate shell type
+if [[ ! "$SHELL_TYPE" =~ ^(bash|zsh|fish)$ ]]; then
+  echo "Error: Invalid shell type '$SHELL_TYPE'. Must be bash, zsh, or fish."
+  exit 1
+fi
+
+# Expand bin dir
+BIN_DIR="${BIN_DIR/#\~/$HOME}"
+
+# Determine RC file
+case $SHELL_TYPE in
+  bash)
+    RC_FILE="$HOME/.bashrc"
+    ;;
+  zsh)
+    RC_FILE="$HOME/.zshrc"
+    ;;
+  fish)
+    RC_FILE="$HOME/.config/fish/config.fish"
+    ;;
+esac
+
+CONFIG_DIR="$HOME/.config/goto"
+WRAPPER_FILE="$CONFIG_DIR/goto.$SHELL_TYPE"
+SOURCE_LINE="source $WRAPPER_FILE"
+
+echo "Installing goto for $SHELL_TYPE..."
+echo ""
+
+# Step 1: Build if needed
+if [ ! -f "$SCRIPT_DIR/target/release/goto-bin" ]; then
+  echo "[1/5] Building goto-bin..."
+  if [ "$DRY_RUN" = true ]; then
+    echo "  Would run: cargo build --release"
+  else
+    (cd "$SCRIPT_DIR" && cargo build --release)
+  fi
+else
+  echo "[1/5] Binary already built, skipping..."
+fi
+
+# Step 2: Copy binary
+echo "[2/5] Installing binary to $BIN_DIR/goto-bin"
+if [ "$DRY_RUN" = true ]; then
+  echo "  Would create: $BIN_DIR"
+  echo "  Would copy: $SCRIPT_DIR/target/release/goto-bin -> $BIN_DIR/goto-bin"
+else
+  mkdir -p "$BIN_DIR"
+  cp "$SCRIPT_DIR/target/release/goto-bin" "$BIN_DIR/goto-bin"
+  chmod +x "$BIN_DIR/goto-bin"
+fi
+
+# Step 3: Copy shell wrapper
+echo "[3/5] Installing shell wrapper to $WRAPPER_FILE"
+if [ "$DRY_RUN" = true ]; then
+  echo "  Would create: $CONFIG_DIR"
+  echo "  Would copy: $SCRIPT_DIR/shell/goto.$SHELL_TYPE -> $WRAPPER_FILE"
+else
+  mkdir -p "$CONFIG_DIR"
+  cp "$SCRIPT_DIR/shell/goto.$SHELL_TYPE" "$WRAPPER_FILE"
+fi
+
+# Step 4: Update shell config
+echo "[4/5] Updating $RC_FILE"
+if [ "$DRY_RUN" = true ]; then
+  if [ -f "$RC_FILE" ] && grep -qF "$SOURCE_LINE" "$RC_FILE" 2>/dev/null; then
+    echo "  Source line already present, would skip"
+  else
+    echo "  Would append: $SOURCE_LINE"
+  fi
+else
+  # Create rc file parent directory if needed (for fish)
+  mkdir -p "$(dirname "$RC_FILE")"
+
+  if [ -f "$RC_FILE" ] && grep -qF "$SOURCE_LINE" "$RC_FILE" 2>/dev/null; then
+    echo "  Source line already present, skipping"
+  else
+    echo "" >> "$RC_FILE"
+    echo "# goto - directory navigation" >> "$RC_FILE"
+    echo "$SOURCE_LINE" >> "$RC_FILE"
+    echo "  Added source line"
+  fi
+fi
+
+# Step 5: Verify PATH
+echo "[5/5] Checking PATH..."
+if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+  echo "  WARNING: $BIN_DIR is not in your PATH"
+  echo "  Add this to your shell config: export PATH=\"\$PATH:$BIN_DIR\""
+else
+  echo "  $BIN_DIR is in PATH"
+fi
+
+echo ""
+if [ "$DRY_RUN" = true ]; then
+  echo "Dry run complete. No changes were made."
+else
+  echo "Installation complete!"
+  echo "Restart your shell or run: source $RC_FILE"
+fi
+'''
+
+[tasks.uninstall]
+description = "Uninstall goto binary and shell integration"
+run = '''
+#!/usr/bin/env bash
+set -e
+
+DRY_RUN=false
+BIN_DIR="$HOME/.local/bin"
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: mise run uninstall [--dry-run]"
+      exit 1
+      ;;
+  esac
+done
+
+CONFIG_DIR="$HOME/.config/goto"
+
+echo "Uninstalling goto..."
+echo ""
+
+# Step 1: Remove binary
+echo "[1/4] Removing binary"
+if [ -f "$BIN_DIR/goto-bin" ]; then
+  if [ "$DRY_RUN" = true ]; then
+    echo "  Would remove: $BIN_DIR/goto-bin"
+  else
+    rm "$BIN_DIR/goto-bin"
+    echo "  Removed: $BIN_DIR/goto-bin"
+  fi
+else
+  echo "  Binary not found at $BIN_DIR/goto-bin, skipping"
+fi
+
+# Step 2: Remove shell wrappers (but preserve data)
+echo "[2/4] Removing shell wrappers"
+for ext in bash zsh fish; do
+  WRAPPER="$CONFIG_DIR/goto.$ext"
+  if [ -f "$WRAPPER" ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "  Would remove: $WRAPPER"
+    else
+      rm "$WRAPPER"
+      echo "  Removed: $WRAPPER"
+    fi
+  fi
+done
+
+# Step 3: Remove source lines from shell configs
+echo "[3/4] Cleaning up shell config files"
+for shell_type in bash zsh fish; do
+  case $shell_type in
+    bash) RC_FILE="$HOME/.bashrc" ;;
+    zsh) RC_FILE="$HOME/.zshrc" ;;
+    fish) RC_FILE="$HOME/.config/fish/config.fish" ;;
+  esac
+
+  SOURCE_LINE="source $CONFIG_DIR/goto.$shell_type"
+
+  if [ -f "$RC_FILE" ]; then
+    if grep -qF "$SOURCE_LINE" "$RC_FILE" 2>/dev/null; then
+      if [ "$DRY_RUN" = true ]; then
+        echo "  Would remove goto lines from: $RC_FILE"
+      else
+        # Remove the source line and the comment above it
+        grep -vF "$SOURCE_LINE" "$RC_FILE" | grep -v "^# goto - directory navigation$" > "$RC_FILE.tmp"
+        mv "$RC_FILE.tmp" "$RC_FILE"
+        echo "  Cleaned: $RC_FILE"
+      fi
+    fi
+  fi
+done
+
+# Step 4: Warn about preserved data
+echo "[4/4] Checking for preserved data"
+if [ -f "$CONFIG_DIR/aliases.toml" ]; then
+  echo "  NOTE: Preserving $CONFIG_DIR/aliases.toml (your aliases)"
+  echo "  To remove all data: rm -rf $CONFIG_DIR"
+else
+  # Remove config dir if empty or only has our files
+  if [ -d "$CONFIG_DIR" ]; then
+    if [ "$DRY_RUN" = true ]; then
+      if [ -z "$(ls -A "$CONFIG_DIR" 2>/dev/null)" ]; then
+        echo "  Would remove empty directory: $CONFIG_DIR"
+      fi
+    else
+      rmdir "$CONFIG_DIR" 2>/dev/null && echo "  Removed empty directory: $CONFIG_DIR" || true
+    fi
+  fi
+fi
+
+echo ""
+if [ "$DRY_RUN" = true ]; then
+  echo "Dry run complete. No changes were made."
+else
+  echo "Uninstallation complete!"
+  echo "Restart your shell to complete the removal."
+fi
 '''
