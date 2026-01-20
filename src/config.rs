@@ -207,18 +207,60 @@ pub fn expand_path(path: &str) -> Result<PathBuf, ConfigError> {
 mod tests {
     use super::*;
     use std::env;
+    use std::sync::Mutex;
+
+    // Mutex to ensure environment-modifying tests run serially
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    /// Helper to run a test that modifies environment variables safely
+    fn with_env_vars<F, R>(vars: &[(&str, Option<&str>)], test_fn: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        // Save original values
+        let originals: Vec<_> = vars
+            .iter()
+            .map(|(name, _)| (*name, env::var(name).ok()))
+            .collect();
+
+        // Set new values
+        for (name, value) in vars {
+            match value {
+                Some(v) => env::set_var(name, v),
+                None => env::remove_var(name),
+            }
+        }
+
+        let result = test_fn();
+
+        // Restore original values
+        for (name, original) in originals {
+            match original {
+                Some(v) => env::set_var(name, v),
+                None => env::remove_var(name),
+            }
+        }
+
+        result
+    }
 
     #[test]
     fn test_config_load() {
-        let config = Config::load();
-        assert!(config.is_ok());
+        with_env_vars(&[], || {
+            let config = Config::load();
+            assert!(config.is_ok());
+        });
     }
 
     #[test]
     fn test_config_paths() {
-        let config = Config::load().unwrap();
-        assert!(config.aliases_path.to_string_lossy().contains("aliases.toml"));
-        assert!(config.stack_path.to_string_lossy().contains("goto_stack"));
+        with_env_vars(&[], || {
+            let config = Config::load().unwrap();
+            assert!(config.aliases_path.to_string_lossy().contains("aliases.toml"));
+            assert!(config.stack_path.to_string_lossy().contains("goto_stack"));
+        });
     }
 
     #[test]
@@ -242,10 +284,10 @@ mod tests {
 
     #[test]
     fn test_expand_path_env_var() {
-        env::set_var("TEST_EXPAND_VAR", "/tmp/test");
-        let expanded = expand_path("$TEST_EXPAND_VAR/subdir").unwrap();
-        assert!(expanded.to_string_lossy().contains("/tmp/test/subdir"));
-        env::remove_var("TEST_EXPAND_VAR");
+        with_env_vars(&[("TEST_EXPAND_VAR", Some("/tmp/test"))], || {
+            let expanded = expand_path("$TEST_EXPAND_VAR/subdir").unwrap();
+            assert!(expanded.to_string_lossy().contains("/tmp/test/subdir"));
+        });
     }
 
     #[test]
@@ -282,7 +324,15 @@ fuzzy_threshold = 0.7
 
     #[test]
     fn test_format_config() {
-        let config = Config::load().unwrap();
+        // Use a manually constructed config to avoid env var issues
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            database_path: temp_dir.path().to_path_buf(),
+            stack_path: temp_dir.path().join("goto_stack"),
+            config_path: temp_dir.path().join("config.toml"),
+            aliases_path: temp_dir.path().join("aliases.toml"),
+            user: UserConfig::default(),
+        };
         let formatted = config.format_config();
         assert!(formatted.contains("Configuration file:"));
         assert!(formatted.contains("fuzzy_threshold"));
@@ -293,16 +343,188 @@ fuzzy_threshold = 0.7
 
     #[test]
     fn test_goto_db_env_var() {
-        let original = env::var("GOTO_DB").ok();
-        env::set_var("GOTO_DB", "/custom/path");
+        with_env_vars(&[("GOTO_DB", Some("/custom/path"))], || {
+            let path = get_database_path().unwrap();
+            assert_eq!(path, PathBuf::from("/custom/path"));
+        });
+    }
 
-        let path = get_database_path().unwrap();
-        assert_eq!(path, PathBuf::from("/custom/path"));
+    #[test]
+    fn test_xdg_config_home_env_var() {
+        with_env_vars(
+            &[
+                ("GOTO_DB", None),
+                ("XDG_CONFIG_HOME", Some("/tmp/test-xdg-config")),
+            ],
+            || {
+                let path = get_database_path().unwrap();
+                assert_eq!(path, PathBuf::from("/tmp/test-xdg-config/goto"));
+            },
+        );
+    }
 
-        if let Some(val) = original {
-            env::set_var("GOTO_DB", val);
-        } else {
-            env::remove_var("GOTO_DB");
-        }
+    #[test]
+    fn test_config_load_with_existing_config_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        // Write a custom config file
+        let custom_config = r#"
+[general]
+fuzzy_threshold = 0.8
+default_sort = "usage"
+
+[display]
+show_stats = true
+show_tags = false
+"#;
+        fs::write(&config_path, custom_config).unwrap();
+
+        with_env_vars(
+            &[("GOTO_DB", Some(temp_dir.path().to_str().unwrap()))],
+            || {
+                let config = Config::load().unwrap();
+
+                // Verify the config was loaded from file
+                assert!((config.user.general.fuzzy_threshold - 0.8).abs() < f64::EPSILON);
+                assert_eq!(config.user.general.default_sort, "usage");
+                assert!(config.user.display.show_stats);
+                assert!(!config.user.display.show_tags);
+            },
+        );
+    }
+
+    #[test]
+    fn test_ensure_dirs_creates_directory() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let nested_path = temp_dir.path().join("nested").join("config");
+
+        let config = Config {
+            database_path: nested_path.clone(),
+            stack_path: nested_path.join("goto_stack"),
+            config_path: nested_path.join("config.toml"),
+            aliases_path: nested_path.join("aliases.toml"),
+            user: UserConfig::default(),
+        };
+
+        assert!(!nested_path.exists());
+        config.ensure_dirs().unwrap();
+        assert!(nested_path.exists());
+    }
+
+    #[test]
+    fn test_create_default_config_file_new() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let config = Config {
+            database_path: temp_dir.path().to_path_buf(),
+            stack_path: temp_dir.path().join("goto_stack"),
+            config_path: config_path.clone(),
+            aliases_path: temp_dir.path().join("aliases.toml"),
+            user: UserConfig::default(),
+        };
+
+        assert!(!config_path.exists());
+        config.create_default_config_file().unwrap();
+        assert!(config_path.exists());
+
+        // Verify the content
+        let content = fs::read_to_string(&config_path).unwrap();
+        assert!(content.contains("fuzzy_threshold"));
+        assert!(content.contains("default_sort"));
+        assert!(content.contains("show_stats"));
+        assert!(content.contains("show_tags"));
+    }
+
+    #[test]
+    fn test_create_default_config_file_already_exists() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        // Create an existing config file with custom content
+        let custom_content = "# custom config";
+        fs::write(&config_path, custom_content).unwrap();
+
+        let config = Config {
+            database_path: temp_dir.path().to_path_buf(),
+            stack_path: temp_dir.path().join("goto_stack"),
+            config_path: config_path.clone(),
+            aliases_path: temp_dir.path().join("aliases.toml"),
+            user: UserConfig::default(),
+        };
+
+        // Should return early without overwriting
+        config.create_default_config_file().unwrap();
+
+        // Verify original content is preserved
+        let content = fs::read_to_string(&config_path).unwrap();
+        assert_eq!(content, custom_content);
+    }
+
+    #[test]
+    fn test_create_default_config_file_creates_dirs() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let nested_dir = temp_dir.path().join("nested").join("deeply");
+        let config_path = nested_dir.join("config.toml");
+
+        let config = Config {
+            database_path: nested_dir.clone(),
+            stack_path: nested_dir.join("goto_stack"),
+            config_path: config_path.clone(),
+            aliases_path: nested_dir.join("aliases.toml"),
+            user: UserConfig::default(),
+        };
+
+        assert!(!nested_dir.exists());
+        config.create_default_config_file().unwrap();
+        assert!(nested_dir.exists());
+        assert!(config_path.exists());
+    }
+
+    #[test]
+    fn test_expand_path_missing_env_var() {
+        with_env_vars(&[("NONEXISTENT_VAR_FOR_TEST_12345", None)], || {
+            // shellexpand leaves unknown env vars in place or returns the original
+            let result = expand_path("$NONEXISTENT_VAR_FOR_TEST_12345/foo").unwrap();
+            // The path should still be returned (shellexpand handles missing vars gracefully)
+            assert!(result.to_string_lossy().contains("foo"));
+        });
+    }
+
+    #[test]
+    fn test_config_load_with_invalid_toml() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        // Write invalid TOML
+        fs::write(&config_path, "invalid { toml [syntax").unwrap();
+
+        with_env_vars(
+            &[("GOTO_DB", Some(temp_dir.path().to_str().unwrap()))],
+            || {
+                // Should return an error for invalid TOML
+                let result = Config::load();
+                assert!(result.is_err());
+            },
+        );
+    }
+
+    #[test]
+    fn test_config_load_without_config_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        with_env_vars(
+            &[("GOTO_DB", Some(temp_dir.path().to_str().unwrap()))],
+            || {
+                let config = Config::load().unwrap();
+
+                // Should use defaults
+                assert!((config.user.general.fuzzy_threshold - 0.3).abs() < f64::EPSILON);
+                assert_eq!(config.user.general.default_sort, "alpha");
+                assert!(!config.user.display.show_stats);
+                assert!(config.user.display.show_tags);
+            },
+        );
     }
 }

@@ -449,4 +449,373 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Usage:"));
     }
+
+    // Stack commands tests
+    #[test]
+    fn test_parse_push_short() {
+        let result = parse_args(&args(&["goto", "-p", "proj"]));
+        assert!(result.is_ok());
+        if let Command::Push { alias } = result.unwrap().command {
+            assert_eq!(alias, "proj");
+        } else {
+            panic!("Expected Push command");
+        }
+    }
+
+    #[test]
+    fn test_parse_push_long() {
+        let result = parse_args(&args(&["goto", "--push", "myalias"]));
+        assert!(result.is_ok());
+        if let Command::Push { alias } = result.unwrap().command {
+            assert_eq!(alias, "myalias");
+        } else {
+            panic!("Expected Push command");
+        }
+    }
+
+    #[test]
+    fn test_parse_push_missing_arg() {
+        let result = parse_args(&args(&["goto", "-p"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    #[test]
+    fn test_parse_pop_short() {
+        let result = parse_args(&args(&["goto", "-o"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::Pop));
+    }
+
+    #[test]
+    fn test_parse_pop_long() {
+        let result = parse_args(&args(&["goto", "--pop"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::Pop));
+    }
+
+    // Tag commands tests
+    #[test]
+    fn test_parse_tag() {
+        let result = parse_args(&args(&["goto", "--tag", "proj", "work"]));
+        assert!(result.is_ok());
+        if let Command::Tag { alias, tag } = result.unwrap().command {
+            assert_eq!(alias, "proj");
+            assert_eq!(tag, "work");
+        } else {
+            panic!("Expected Tag command");
+        }
+    }
+
+    #[test]
+    fn test_parse_tag_missing_args() {
+        let result = parse_args(&args(&["goto", "--tag", "proj"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    #[test]
+    fn test_parse_untag() {
+        let result = parse_args(&args(&["goto", "--untag", "proj", "work"]));
+        assert!(result.is_ok());
+        if let Command::Untag { alias, tag } = result.unwrap().command {
+            assert_eq!(alias, "proj");
+            assert_eq!(tag, "work");
+        } else {
+            panic!("Expected Untag command");
+        }
+    }
+
+    #[test]
+    fn test_parse_untag_missing_args() {
+        let result = parse_args(&args(&["goto", "--untag", "proj"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    #[test]
+    fn test_parse_tags() {
+        let result = parse_args(&args(&["goto", "--tags"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::ListTags));
+    }
+
+    #[test]
+    fn test_parse_tags_raw() {
+        let result = parse_args(&args(&["goto", "--tags-raw"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::ListTagsRaw));
+    }
+
+    // Stats and recent commands tests
+    #[test]
+    fn test_parse_stats() {
+        let result = parse_args(&args(&["goto", "--stats"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::Stats));
+    }
+
+    #[test]
+    fn test_parse_recent_default() {
+        let result = parse_args(&args(&["goto", "--recent"]));
+        assert!(result.is_ok());
+        if let Command::Recent { count, navigate_to } = result.unwrap().command {
+            assert_eq!(count, Some(10));
+            assert_eq!(navigate_to, None);
+        } else {
+            panic!("Expected Recent command");
+        }
+    }
+
+    #[test]
+    fn test_parse_recent_with_navigate_number() {
+        let result = parse_args(&args(&["goto", "--recent", "3"]));
+        assert!(result.is_ok());
+        if let Command::Recent { count, navigate_to } = result.unwrap().command {
+            assert_eq!(count, None);
+            assert_eq!(navigate_to, Some(3));
+        } else {
+            panic!("Expected Recent command");
+        }
+    }
+
+    #[test]
+    fn test_parse_recent_with_large_count() {
+        // Numbers > 20 or with extra args should set count instead of navigate_to
+        let result = parse_args(&args(&["goto", "--recent", "50"]));
+        assert!(result.is_ok());
+        if let Command::Recent { count, navigate_to } = result.unwrap().command {
+            assert_eq!(count, Some(50));
+            assert_eq!(navigate_to, None);
+        } else {
+            panic!("Expected Recent command");
+        }
+    }
+
+    #[test]
+    fn test_parse_recent_clear() {
+        let result = parse_args(&args(&["goto", "--recent-clear"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::RecentClear));
+    }
+
+    // Rename command tests
+    #[test]
+    fn test_parse_rename() {
+        let result = parse_args(&args(&["goto", "--rename", "old", "new"]));
+        assert!(result.is_ok());
+        if let Command::Rename { old_name, new_name } = result.unwrap().command {
+            assert_eq!(old_name, "old");
+            assert_eq!(new_name, "new");
+        } else {
+            panic!("Expected Rename command");
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_missing_args() {
+        let result = parse_args(&args(&["goto", "--rename", "old"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    // Config command tests
+    #[test]
+    fn test_parse_config() {
+        let result = parse_args(&args(&["goto", "--config"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::Config));
+    }
+
+    // Install command tests
+    #[test]
+    fn test_parse_install_default() {
+        let result = parse_args(&args(&["goto", "--install"]));
+        assert!(result.is_ok());
+        if let Command::Install { shell, skip_rc, dry_run } = result.unwrap().command {
+            assert_eq!(shell, None);
+            assert!(!skip_rc);
+            assert!(!dry_run);
+        } else {
+            panic!("Expected Install command");
+        }
+    }
+
+    #[test]
+    fn test_parse_install_with_shell() {
+        let result = parse_args(&args(&["goto", "--install", "--shell=zsh"]));
+        assert!(result.is_ok());
+        if let Command::Install { shell, skip_rc, dry_run } = result.unwrap().command {
+            assert_eq!(shell, Some("zsh".to_string()));
+            assert!(!skip_rc);
+            assert!(!dry_run);
+        } else {
+            panic!("Expected Install command");
+        }
+    }
+
+    #[test]
+    fn test_parse_install_with_skip_rc() {
+        let result = parse_args(&args(&["goto", "--install", "--skip-rc"]));
+        assert!(result.is_ok());
+        if let Command::Install { shell, skip_rc, dry_run } = result.unwrap().command {
+            assert_eq!(shell, None);
+            assert!(skip_rc);
+            assert!(!dry_run);
+        } else {
+            panic!("Expected Install command");
+        }
+    }
+
+    #[test]
+    fn test_parse_install_with_dry_run() {
+        let result = parse_args(&args(&["goto", "--install", "--dry-run"]));
+        assert!(result.is_ok());
+        if let Command::Install { shell, skip_rc, dry_run } = result.unwrap().command {
+            assert_eq!(shell, None);
+            assert!(!skip_rc);
+            assert!(dry_run);
+        } else {
+            panic!("Expected Install command");
+        }
+    }
+
+    #[test]
+    fn test_parse_install_all_options() {
+        let result = parse_args(&args(&["goto", "--install", "--shell=bash", "--skip-rc", "--dry-run"]));
+        assert!(result.is_ok());
+        if let Command::Install { shell, skip_rc, dry_run } = result.unwrap().command {
+            assert_eq!(shell, Some("bash".to_string()));
+            assert!(skip_rc);
+            assert!(dry_run);
+        } else {
+            panic!("Expected Install command");
+        }
+    }
+
+    // Import command tests
+    #[test]
+    fn test_parse_import() {
+        let result = parse_args(&args(&["goto", "--import", "backup.toml"]));
+        assert!(result.is_ok());
+        if let Command::Import { file, strategy } = result.unwrap().command {
+            assert_eq!(file, "backup.toml");
+            assert!(matches!(strategy, ImportStrategy::Skip));
+        } else {
+            panic!("Expected Import command");
+        }
+    }
+
+    #[test]
+    fn test_parse_import_with_strategy_overwrite() {
+        let result = parse_args(&args(&["goto", "--import", "backup.toml", "--strategy=overwrite"]));
+        assert!(result.is_ok());
+        if let Command::Import { file, strategy } = result.unwrap().command {
+            assert_eq!(file, "backup.toml");
+            assert!(matches!(strategy, ImportStrategy::Overwrite));
+        } else {
+            panic!("Expected Import command");
+        }
+    }
+
+    #[test]
+    fn test_parse_import_with_strategy_rename() {
+        let result = parse_args(&args(&["goto", "--import", "backup.toml", "--strategy=rename"]));
+        assert!(result.is_ok());
+        if let Command::Import { file, strategy } = result.unwrap().command {
+            assert_eq!(file, "backup.toml");
+            assert!(matches!(strategy, ImportStrategy::Rename));
+        } else {
+            panic!("Expected Import command");
+        }
+    }
+
+    #[test]
+    fn test_parse_import_missing_file() {
+        let result = parse_args(&args(&["goto", "--import"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    // Unregister and expand tests
+    #[test]
+    fn test_parse_unregister_short() {
+        let result = parse_args(&args(&["goto", "-u", "proj"]));
+        assert!(result.is_ok());
+        if let Command::Unregister { name } = result.unwrap().command {
+            assert_eq!(name, "proj");
+        } else {
+            panic!("Expected Unregister command");
+        }
+    }
+
+    #[test]
+    fn test_parse_unregister_long() {
+        let result = parse_args(&args(&["goto", "--unregister", "proj"]));
+        assert!(result.is_ok());
+        if let Command::Unregister { name } = result.unwrap().command {
+            assert_eq!(name, "proj");
+        } else {
+            panic!("Expected Unregister command");
+        }
+    }
+
+    #[test]
+    fn test_parse_unregister_missing_arg() {
+        let result = parse_args(&args(&["goto", "-u"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    #[test]
+    fn test_parse_expand_short() {
+        let result = parse_args(&args(&["goto", "-x", "proj"]));
+        assert!(result.is_ok());
+        if let Command::Expand { alias } = result.unwrap().command {
+            assert_eq!(alias, "proj");
+        } else {
+            panic!("Expected Expand command");
+        }
+    }
+
+    #[test]
+    fn test_parse_expand_long() {
+        let result = parse_args(&args(&["goto", "--expand", "proj"]));
+        assert!(result.is_ok());
+        if let Command::Expand { alias } = result.unwrap().command {
+            assert_eq!(alias, "proj");
+        } else {
+            panic!("Expected Expand command");
+        }
+    }
+
+    #[test]
+    fn test_parse_expand_missing_arg() {
+        let result = parse_args(&args(&["goto", "-x"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    // Export command test
+    #[test]
+    fn test_parse_export() {
+        let result = parse_args(&args(&["goto", "--export"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::Export));
+    }
+
+    // List names test
+    #[test]
+    fn test_parse_list_names() {
+        let result = parse_args(&args(&["goto", "--list-aliases"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::ListNames));
+    }
+
+    #[test]
+    fn test_parse_names_only() {
+        let result = parse_args(&args(&["goto", "--names-only"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::ListNames));
+    }
 }

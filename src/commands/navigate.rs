@@ -210,4 +210,131 @@ mod tests {
             assert!(err.contains("not found") || err.contains("Did you mean"));
         }
     }
+
+    #[test]
+    fn test_navigate_no_fuzzy_matches() {
+        // Test line 42: alias not found with no suggestions
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("aliases");
+        let mut db = Database::load_from_path(&db_path).unwrap();
+
+        // Add an alias that is very different from search term
+        let target = tempdir().unwrap();
+        db.insert(Alias::new("xyz", target.path().to_str().unwrap()).unwrap());
+
+        // Search for something completely unrelated
+        let result = navigate(&mut db, "qwerty123");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("alias 'qwerty123' not found"));
+        // Should NOT contain "Did you mean" since no fuzzy matches
+        assert!(!err.contains("Did you mean"));
+    }
+
+    #[test]
+    fn test_navigate_single_fuzzy_match() {
+        // Test lines 45-46, 56-59, 61: single fuzzy match navigates directly
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("aliases");
+        let mut db = Database::load_from_path(&db_path).unwrap();
+
+        let target = tempdir().unwrap();
+        db.insert(Alias::new("myproject", target.path().to_str().unwrap()).unwrap());
+
+        // Typo should find single match and navigate
+        let result = navigate(&mut db, "myprojet");
+        assert!(result.is_ok());
+
+        // Should have recorded usage
+        let alias = db.get("myproject").unwrap();
+        assert_eq!(alias.use_count, 1);
+    }
+
+    #[test]
+    fn test_navigate_single_fuzzy_match_directory_not_found() {
+        // Test lines 48-50: single fuzzy match but directory doesn't exist
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("aliases");
+        let mut db = Database::load_from_path(&db_path).unwrap();
+
+        // Create alias pointing to non-existent directory
+        db.insert(Alias::new("myproject", "/nonexistent/fuzzy/path").unwrap());
+
+        // Typo should find single match but fail on directory check
+        let result = navigate(&mut db, "myprojet");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("directory does not exist"));
+    }
+
+    #[test]
+    fn test_navigate_single_fuzzy_match_not_a_directory() {
+        // Test lines 52-53: single fuzzy match but path is not a directory
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("aliases");
+        let mut db = Database::load_from_path(&db_path).unwrap();
+
+        // Create a file and alias to it
+        let file = NamedTempFile::new().unwrap();
+        db.insert(Alias::new("myproject", file.path().to_str().unwrap()).unwrap());
+
+        // Typo should find single match but fail on directory check
+        let result = navigate(&mut db, "myprojet");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a directory"));
+    }
+
+    #[test]
+    fn test_navigate_multiple_fuzzy_matches() {
+        // Test lines 63-70: multiple fuzzy matches show suggestions
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("aliases");
+        let mut db = Database::load_from_path(&db_path).unwrap();
+
+        let target = tempdir().unwrap();
+        db.insert(Alias::new("project1", target.path().to_str().unwrap()).unwrap());
+        db.insert(Alias::new("project2", target.path().to_str().unwrap()).unwrap());
+        db.insert(Alias::new("project3", target.path().to_str().unwrap()).unwrap());
+
+        // Typo that matches multiple aliases
+        let result = navigate(&mut db, "project");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Did you mean"));
+        assert!(err.contains("project1") || err.contains("project2") || err.contains("project3"));
+    }
+
+    #[test]
+    fn test_completions_empty_query() {
+        // Test lines 90-93: completions with empty query returns all sorted
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("aliases");
+        let mut db = Database::load_from_path(&db_path).unwrap();
+
+        let target = tempdir().unwrap();
+        db.insert(Alias::new("zebra", target.path().to_str().unwrap()).unwrap());
+        db.insert(Alias::new("apple", target.path().to_str().unwrap()).unwrap());
+        db.insert(Alias::new("mango", target.path().to_str().unwrap()).unwrap());
+
+        // Empty query should return all aliases
+        let result = completions(&db, "");
+        assert!(result.is_ok());
+        // The function prints to stdout, so we just verify it completes successfully
+    }
+
+    #[test]
+    fn test_completions_with_query() {
+        // Test lines 97-100: completions with query returns fuzzy matches
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("aliases");
+        let mut db = Database::load_from_path(&db_path).unwrap();
+
+        let target = tempdir().unwrap();
+        db.insert(Alias::new("projects", target.path().to_str().unwrap()).unwrap());
+        db.insert(Alias::new("personal", target.path().to_str().unwrap()).unwrap());
+        db.insert(Alias::new("work", target.path().to_str().unwrap()).unwrap());
+
+        // Query should filter to matching aliases
+        let result = completions(&db, "pro");
+        assert!(result.is_ok());
+    }
 }

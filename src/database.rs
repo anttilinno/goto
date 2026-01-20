@@ -678,4 +678,122 @@ created_at = "2024-01-01T00:00:00Z"
         assert_eq!(alias.use_count, 5);
         assert!(alias.has_tag("work"));
     }
+
+    #[test]
+    fn test_load_with_config() {
+        use crate::config::{Config, UserConfig};
+
+        let dir = tempdir().unwrap();
+        let config = Config {
+            database_path: dir.path().to_path_buf(),
+            stack_path: dir.path().join("goto_stack"),
+            config_path: dir.path().join("config.toml"),
+            aliases_path: dir.path().join("aliases"),
+            user: UserConfig::default(),
+        };
+
+        // Test Database::load() which calls config.ensure_dirs()
+        let mut db = Database::load(&config).unwrap();
+        assert!(db.is_empty());
+
+        // Add an alias and save
+        let alias = Alias::new("test", "/tmp/test").unwrap();
+        db.insert(alias);
+        db.save().unwrap();
+
+        // Reload using the same config
+        let db2 = Database::load(&config).unwrap();
+        assert!(db2.contains("test"));
+    }
+
+    #[test]
+    fn test_add_tag_not_found() {
+        let (mut db, _dir) = create_test_db();
+        let result = db.add_tag("nonexistent", "work");
+        assert!(matches!(result, Err(DatabaseError::Alias(AliasError::NotFound(_)))));
+    }
+
+    #[test]
+    fn test_remove_tag_not_found() {
+        let (mut db, _dir) = create_test_db();
+        let result = db.remove_tag("nonexistent", "work");
+        assert!(matches!(result, Err(DatabaseError::Alias(AliasError::NotFound(_)))));
+    }
+
+    #[test]
+    fn test_set_tags_not_found() {
+        let (mut db, _dir) = create_test_db();
+        let result = db.set_tags("nonexistent", vec!["work".to_string()]);
+        assert!(matches!(result, Err(DatabaseError::Alias(AliasError::NotFound(_)))));
+    }
+
+    #[test]
+    fn test_auto_saves_on_drop() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("aliases");
+
+        {
+            let mut db = Database::load_from_path(&path).unwrap();
+            let alias = Alias::new("dropped", "/tmp/dropped").unwrap();
+            db.insert(alias);
+            // Don't call save() - let Drop handle it
+        }
+
+        // Reopen and verify it was saved
+        let db = Database::load_from_path(&path).unwrap();
+        assert!(db.contains("dropped"));
+    }
+
+    #[test]
+    fn test_dirty_flag_not_set_on_read() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("aliases");
+
+        // Create and populate db
+        {
+            let mut db = Database::load_from_path(&path).unwrap();
+            let alias = Alias::new("test", "/tmp/test").unwrap();
+            db.insert(alias);
+            db.save().unwrap();
+        }
+
+        // Get file modification time
+        let toml_path = path.with_extension("toml");
+        let mtime_before = fs::metadata(&toml_path).unwrap().modified().unwrap();
+
+        // Small delay to ensure any writes would have different timestamp
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Reopen and just read - shouldn't set dirty flag
+        {
+            let db = Database::load_from_path(&path).unwrap();
+            let _ = db.get("test");
+            let _ = db.contains("test");
+            let _ = db.len();
+            let _ = db.is_empty();
+            // On drop, should NOT write since no changes were made
+        }
+
+        // Check that file wasn't modified
+        let mtime_after = fs::metadata(&toml_path).unwrap().modified().unwrap();
+        assert_eq!(mtime_before, mtime_after);
+    }
+
+    #[test]
+    fn test_rename_alias_not_found() {
+        let (mut db, _dir) = create_test_db();
+        let result = db.rename_alias("nonexistent", "newname");
+        assert!(matches!(result, Err(DatabaseError::Alias(AliasError::NotFound(_)))));
+    }
+
+    #[test]
+    fn test_add_with_tags_fails_if_exists() {
+        let (mut db, _dir) = create_test_db();
+        let alias1 = Alias::new("test", "/tmp/test1").unwrap();
+        let alias2 = Alias::new("test", "/tmp/test2").unwrap();
+
+        db.add(alias1).unwrap();
+        let result = db.add_with_tags(alias2, vec!["work".to_string()]);
+        assert!(matches!(result, Err(DatabaseError::Alias(AliasError::AlreadyExists(_)))));
+    }
 }
