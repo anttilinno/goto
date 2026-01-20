@@ -5,22 +5,50 @@ A Rust implementation of [goto](https://github.com/iridakos/goto) - a shell util
 ## Installation
 
 ```bash
+# Install with mise (recommended)
+mise run install
+
+# Or specify options
+mise run install -- --shell=zsh --bin-dir=~/bin --dry-run
+```
+
+This will:
+1. Build the binary (if needed)
+2. Copy `goto-bin` to `~/.local/bin/`
+3. Copy shell wrapper to `~/.config/goto/`
+4. Add source line to your shell rc file
+
+### Manual Installation
+
+```bash
 # Build from source
 cargo build --release
 
-# Or use mise
-mise run build
+# Copy binary
+cp target/release/goto-bin ~/.local/bin/
+
+# Source the shell script in your rc file
+# Bash: add to ~/.bashrc
+source /path/to/goto/shell/goto.bash
+
+# Zsh: add to ~/.zshrc
+source /path/to/goto/shell/goto.zsh
+
+# Fish: add to ~/.config/fish/config.fish
+source /path/to/goto/shell/goto.fish
 ```
 
-The binary will be placed in `bin/goto-bin`.
+## Uninstallation
 
-## Usage
+```bash
+# Uninstall with mise
+mise run uninstall
 
-Source the appropriate shell script for your shell:
+# Preview what will be removed
+mise run uninstall -- --dry-run
+```
 
-- Bash: `source shell/goto.bash`
-- Zsh: `source shell/goto.zsh`
-- Fish: `source shell/goto.fish`
+Note: Your aliases in `~/.config/goto/aliases.toml` are preserved.
 
 ### Commands
 
