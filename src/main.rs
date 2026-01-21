@@ -34,7 +34,12 @@ fn run() -> Result<(), u8> {
             return Ok(());
         }
         Command::Version => {
-            println!("goto version {}", cli::version());
+            // Try to show version with update status if config is available
+            if let Ok(config) = Config::load() {
+                println!("{}", commands::update::version_with_update_status(&config));
+            } else {
+                println!("goto version {}", cli::version());
+            }
             return Ok(());
         }
         Command::Install { shell, skip_rc, dry_run } => {
@@ -75,13 +80,49 @@ fn run() -> Result<(), u8> {
         return Ok(());
     }
 
+    // Handle update commands
+    match &parsed.command {
+        Command::Update => {
+            commands::update::perform_update(&config).map_err(|e| {
+                eprintln!("{}", e);
+                5u8
+            })?;
+            return Ok(());
+        }
+        Command::CheckUpdate => {
+            match commands::update::check_for_updates(&config, true) {
+                Ok(Some(version)) => {
+                    println!(
+                        "Update available: {} (current: {})",
+                        version,
+                        commands::update::current_version()
+                    );
+                    println!("Run 'goto --update' to upgrade.");
+                }
+                Ok(None) => {
+                    println!(
+                        "You are running the latest version ({}).",
+                        commands::update::current_version()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Failed to check for updates: {}", e);
+                    return Err(5);
+                }
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
+
     let mut db = Database::load(&config).map_err(|e| {
         eprintln!("Error loading database: {}", e);
         5u8
     })?;
 
     match parsed.command {
-        Command::Help | Command::Version | Command::Config | Command::Install { .. } => unreachable!(),
+        Command::Help | Command::Version | Command::Config | Command::Install { .. }
+        | Command::Update | Command::CheckUpdate => unreachable!(),
 
         Command::List { sort, filter } => {
             commands::list::list_with_options(&db, &config, sort.as_deref(), filter.as_deref())
@@ -162,7 +203,12 @@ fn run() -> Result<(), u8> {
         }
 
         Command::Navigate { alias } => {
-            commands::navigate::navigate(&mut db, &alias).map_err(handle_error)
+            let result = commands::navigate::navigate(&mut db, &alias).map_err(handle_error);
+            // Show update notification after successful navigation (goes to stderr)
+            if result.is_ok() {
+                commands::update::notify_if_update_available(&config);
+            }
+            result
         }
     }
 }

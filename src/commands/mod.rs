@@ -10,6 +10,7 @@ pub mod register;
 pub mod stack;
 pub mod stats;
 pub mod tags;
+pub mod update;
 
 // Re-export commonly used types
 pub use import_export::{ImportResult, ImportStrategy};

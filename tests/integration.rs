@@ -1465,3 +1465,147 @@ fn test_long_path() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("level19")); // Deepest level
 }
+
+#[test]
+fn test_update_command_parsing() {
+    // Test that --update and -U are recognized
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    // --update should be recognized (will fail gracefully without network)
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--update"]);
+    let output = cmd.output().unwrap();
+    // Should not fail with "unknown option" error
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("Unknown option"),
+        "--update should be recognized as valid command: {}",
+        stderr
+    );
+
+    // -U should also work
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-U"]);
+    let output = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("Unknown option"),
+        "-U should be recognized as valid command: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_check_update_command() {
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    // --check-update should be recognized
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--check-update"]);
+    let output = cmd.output().unwrap();
+
+    // Should not fail with "unknown option" error
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("Unknown option"),
+        "--check-update should be recognized: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_version_command() {
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    // Test -v shows version
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-v"]);
+    let output = cmd.output().unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("goto version"),
+        "Version output should contain 'goto version': {}",
+        stdout
+    );
+
+    // Should contain version number (e.g., "1.4.0")
+    assert!(
+        stdout.contains('.'),
+        "Version should contain a version number with dots: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_update_cache_file() {
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    // Run --check-update which should create/update the cache file
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--check-update"]);
+    let _output = cmd.output().unwrap();
+    // Don't assert success here as network may not be available
+
+    // After running check-update, the cache file might exist
+    // (depends on whether network call succeeded)
+    let cache_path = db_dir.join("update_cache.json");
+
+    // If cache exists, verify it's valid JSON
+    if cache_path.exists() {
+        let content = fs::read_to_string(&cache_path).unwrap();
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&content);
+        assert!(
+            parsed.is_ok(),
+            "Cache file should be valid JSON: {}",
+            content
+        );
+    }
+}
+
+#[test]
+fn test_config_shows_update_settings() {
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    // --config should show update settings
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--config"]);
+    let output = cmd.output().unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Should show [update] section
+    assert!(
+        stdout.contains("[update]"),
+        "Config should show [update] section: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("auto_check"),
+        "Config should show auto_check setting: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("check_interval_hours"),
+        "Config should show check_interval_hours setting: {}",
+        stdout
+    );
+}

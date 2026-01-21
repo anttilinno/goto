@@ -72,6 +72,8 @@ pub enum Command {
         skip_rc: bool,
         dry_run: bool,
     },
+    Update,
+    CheckUpdate,
 }
 
 /// Parse command-line arguments into a structured Args object
@@ -229,6 +231,10 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             dry_run: args.iter().any(|a| a == "--dry-run"),
         },
 
+        "-U" | "--update" => Command::Update,
+
+        "--check-update" => Command::CheckUpdate,
+
         _ => {
             if arg.starts_with('-') {
                 return Err(format!("Unknown option: {}", arg));
@@ -286,6 +292,8 @@ Usage:
   goto --import <file>            Import aliases from TOML file
   goto --config                   Show current configuration
   goto --install                  Install shell integration
+  goto -U / --update              Update goto to latest version
+  goto --check-update             Check for available updates
   goto -v                         Show version
   goto -h                         Show this help
 
@@ -817,5 +825,27 @@ mod tests {
         let result = parse_args(&args(&["goto", "--names-only"]));
         assert!(result.is_ok());
         assert!(matches!(result.unwrap().command, Command::ListNames));
+    }
+
+    // Update command tests
+    #[test]
+    fn test_parse_update_short() {
+        let result = parse_args(&args(&["goto", "-U"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::Update));
+    }
+
+    #[test]
+    fn test_parse_update_long() {
+        let result = parse_args(&args(&["goto", "--update"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::Update));
+    }
+
+    #[test]
+    fn test_parse_check_update() {
+        let result = parse_args(&args(&["goto", "--check-update"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::CheckUpdate));
     }
 }

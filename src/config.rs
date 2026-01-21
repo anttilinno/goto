@@ -68,6 +68,35 @@ impl Default for DisplayConfig {
     }
 }
 
+/// Update settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateConfig {
+    /// Whether to automatically check for updates on startup
+    #[serde(default = "default_auto_check")]
+    pub auto_check: bool,
+
+    /// How often to check for updates (in hours)
+    #[serde(default = "default_check_interval")]
+    pub check_interval_hours: u64,
+}
+
+fn default_auto_check() -> bool {
+    true
+}
+
+fn default_check_interval() -> u64 {
+    24
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            auto_check: default_auto_check(),
+            check_interval_hours: default_check_interval(),
+        }
+    }
+}
+
 /// User-configurable settings loaded from TOML
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UserConfig {
@@ -76,6 +105,9 @@ pub struct UserConfig {
 
     #[serde(default)]
     pub display: DisplayConfig,
+
+    #[serde(default)]
+    pub update: UpdateConfig,
 }
 
 /// Application configuration
@@ -139,6 +171,10 @@ default_sort = "alpha"  # alpha, usage, recent
 [display]
 show_stats = false
 show_tags = true
+
+[update]
+auto_check = true       # Check for updates automatically
+check_interval_hours = 24
 "#;
 
         fs::write(&self.config_path, default_config)?;
@@ -154,12 +190,17 @@ show_tags = true
              default_sort = \"{}\"\n\n\
              [display]\n\
              show_stats = {}\n\
-             show_tags = {}\n",
+             show_tags = {}\n\n\
+             [update]\n\
+             auto_check = {}\n\
+             check_interval_hours = {}\n",
             self.config_path.display(),
             self.user.general.fuzzy_threshold,
             self.user.general.default_sort,
             self.user.display.show_stats,
             self.user.display.show_tags,
+            self.user.update.auto_check,
+            self.user.update.check_interval_hours,
         )
     }
 }
