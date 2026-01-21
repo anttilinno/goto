@@ -40,8 +40,8 @@ pub fn navigate(db: &mut Database, alias: &str) -> Result<(), Box<dyn std::error
 
         if matches.is_empty() {
             Err(format!("alias '{}' not found", alias).into())
-        } else if matches.len() == 1 {
-            // Single fuzzy match - use it
+        } else if matches.len() == 1 && matches[0].1 >= 700 {
+            // Single fuzzy match with high confidence (>= 0.7 similarity) - use it
             let name = matches[0].0.to_string();
             if let Some(entry) = db.get(&name) {
                 // Verify directory exists
@@ -60,7 +60,7 @@ pub fn navigate(db: &mut Database, alias: &str) -> Result<(), Box<dyn std::error
             }
             Ok(())
         } else {
-            // Multiple matches - show suggestions
+            // Multiple matches or single low-confidence match - show suggestions
             let suggestions: Vec<String> = matches.iter().map(|(name, _)| name.to_string()).collect();
             Err(format!(
                 "alias '{}' not found. Did you mean: {}?",
