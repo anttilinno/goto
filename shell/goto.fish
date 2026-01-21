@@ -2,11 +2,37 @@
 # Save to ~/.config/fish/functions/goto.fish or source in config.fish
 
 function goto
+    # No arguments: interactive mode with fzf (if available)
+    if test (count $argv) -eq 0
+        if isatty stdin; and type -q fzf
+            set -l selected (goto-bin --names-only | fzf \
+                --preview 'goto-bin -x {}' \
+                --preview-window 'right:50%' \
+                --height '40%' \
+                --layout reverse \
+                --border \
+                $GOTO_FZF_OPTS)
+            test -z "$selected"; and return 0
+            set -l output (goto-bin $selected)
+            set -l exit_code $status
+            if test $exit_code -eq 0 -a -n "$output" -a -d "$output"
+                cd $output
+            else
+                test -n "$output"; and echo $output
+                return $exit_code
+            end
+        else
+            # No fzf available or not interactive: show list
+            goto-bin -l
+        end
+        return $status
+    end
+
     set -l output (goto-bin $argv)
     set -l exit_code $status
 
     switch "$argv[1]"
-        case "" -h --help -v --version -l --list -c --cleanup -x --expand --list-aliases --names-only -r --register -u --unregister --export --stats --tags --tags-raw --config --rename --tag --untag --import
+        case -h --help -v --version -l --list -c --cleanup -x --expand --list-aliases --names-only -r --register -u --unregister --export --stats --tags --tags-raw --config --rename --tag --untag --import
             echo $output
         case --recent --recent-clear
             # --recent can either display or navigate

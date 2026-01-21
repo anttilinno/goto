@@ -6,11 +6,38 @@ goto() {
     local output
     local exit_code
 
+    # No arguments: interactive mode with fzf (if available)
+    if [[ $# -eq 0 ]]; then
+        if [[ -t 0 ]] && command -v fzf &>/dev/null; then
+            local selected
+            selected=$(goto-bin --names-only | fzf \
+                --preview 'goto-bin -x {}' \
+                --preview-window 'right:50%' \
+                --height 40% \
+                --layout reverse \
+                --border \
+                ${GOTO_FZF_OPTS:-})
+            [[ -z "$selected" ]] && return 0
+            output=$(goto-bin "$selected")
+            exit_code=$?
+            if [[ $exit_code -eq 0 && -n "$output" && -d "$output" ]]; then
+                cd "$output" || return 1
+            else
+                [[ -n "$output" ]] && echo "$output"
+                return $exit_code
+            fi
+        else
+            # No fzf available or not interactive: show list
+            goto-bin -l
+        fi
+        return $?
+    fi
+
     output=$(goto-bin "$@")
     exit_code=$?
 
     case "$1" in
-        ""|-h|--help|-v|--version|-l|--list|-c|--cleanup|-x|--expand|--list-aliases|--names-only)
+        -h|--help|-v|--version|-l|--list|-c|--cleanup|-x|--expand|--list-aliases|--names-only)
             echo "$output"
             ;;
         -r|--register|-u|--unregister)
