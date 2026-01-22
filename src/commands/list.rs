@@ -1,9 +1,8 @@
 //! List commands: list, list_with_options, list_names
 
-use std::io::{self, Write};
-
 use crate::config::Config;
 use crate::database::Database;
+use crate::table::{TableStyle, create_table};
 
 /// Sort order for listing aliases
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -73,31 +72,41 @@ pub fn list_with_options(
         SortOrder::Alpha => aliases.sort_by(|a, b| a.name.cmp(&b.name)),
     }
 
-    // Print entries with formatted output
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
+    // Build table with configured style
+    let style = TableStyle::from(config.user.display.table_style.as_str());
+    let mut table = create_table(style);
 
+    // Build header dynamically based on config
+    let mut header = vec!["Name", "Path"];
+    if config.user.display.show_stats {
+        header.push("Uses");
+    }
+    if config.user.display.show_tags {
+        header.push("Tags");
+    }
+    table.set_header(header);
+
+    // Add rows for each alias
     for alias in &aliases {
-        let tags_str = if config.user.display.show_tags {
-            if alias.tags.is_empty() {
-                String::new()
-            } else {
-                format!("    [{}]", alias.tags.join(", "))
-            }
-        } else {
-            String::new()
-        };
+        let mut row: Vec<String> = vec![alias.name.clone(), alias.path.clone()];
 
         if config.user.display.show_stats {
-            writeln!(
-                handle,
-                "{:<12}    {}    [{} uses]{}",
-                alias.name, alias.path, alias.use_count, tags_str
-            )?;
-        } else {
-            writeln!(handle, "{:<12}    {}{}", alias.name, alias.path, tags_str)?;
+            row.push(alias.use_count.to_string());
         }
+
+        if config.user.display.show_tags {
+            let tags_str = if alias.tags.is_empty() {
+                "-".to_string()
+            } else {
+                alias.tags.join(", ")
+            };
+            row.push(tags_str);
+        }
+
+        table.add_row(row);
     }
+
+    println!("{table}");
 
     Ok(())
 }
