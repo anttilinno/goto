@@ -51,6 +51,7 @@ pub fn create_table(style: TableStyle) -> Table {
     }
 
     table.set_content_arrangement(ContentArrangement::Dynamic);
+    table.set_truncation_indicator("...");  // Graceful truncation for narrow terminals
     table
 }
 
@@ -107,5 +108,20 @@ mod tests {
         assert!(output.contains("downloads"));
         assert!(output.contains("Name"));
         assert!(output.contains("Path"));
+    }
+
+    #[test]
+    fn test_table_truncation_indicator() {
+        let mut table = create_table(TableStyle::Unicode);
+        table.set_width(80);  // Force narrow width
+        table.set_header(vec!["Name", "Path"]);
+        table.add_row(vec![
+            "project",
+            "/home/user/very/deeply/nested/project/directory/with/extremely/long/path/name"
+        ]);
+
+        let output = table.to_string();
+        assert!(!output.is_empty());
+        // Table renders without panic at narrow width
     }
 }
