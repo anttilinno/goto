@@ -5,53 +5,43 @@
 ## Test Framework
 
 **Runner:**
-- `cargo test` (Rust built-in testing framework)
-- No external test runner; uses standard Rust test harness
-- Config: Cargo.toml specifies `[[test]]` section with `tests/integration.rs` path
+- `cargo test` (built-in Rust test harness)
+- No external test framework (no criterion, proptest, etc.)
 
 **Assertion Library:**
-- Standard Rust assertions: `assert!()`, `assert_eq!()`, `assert_ne!()`
-- No external assertion library; relies on standard macros
-- Result-based assertions: `assert!(result.is_ok())`, `assert!(matches!(...))`
+- Standard `assert!()`, `assert_eq!()`, `assert!()` macros
+- `matches!()` macro for error type checking: `assert!(matches!(result, Err(DatabaseError::Alias(AliasError::NotFound(_)))))`
 
 **Run Commands:**
 ```bash
-cargo test                     # Run all tests
-cargo test --lib              # Run library tests only (unit tests in src/)
-cargo test --test integration # Run integration tests only
-cargo test <test_name>         # Run specific test by name
-cargo test -- --nocapture     # Show println! output during tests
-cargo test -- --test-threads=1 # Run tests sequentially
+cargo test                 # Run all tests
+cargo test --lib          # Run library unit tests only
+cargo test --test '*'     # Run integration tests only
+cargo test <test_name>    # Run specific test
 ```
 
 ## Test File Organization
 
 **Location:**
-- **Unit tests:** Inline within source files using `#[cfg(test)]` modules
-- **Integration tests:** Separate `tests/integration.rs` file
-- Pattern: Source files (`src/alias.rs`, `src/database.rs`, `src/fuzzy.rs`) contain comprehensive unit tests
-- Integration tests use compiled binary via `env!("CARGO_BIN_EXE_goto-bin")`
+- Unit tests co-located in source files with `#[cfg(test)]` blocks
+- Integration tests in `tests/integration.rs`
 
 **Naming:**
-- Test functions: `test_[behavior]` format: `test_new_alias()`, `test_invalid_name_empty()`
-- Test modules: `#[cfg(test)] mod tests { ... }`
-- Integration test naming: `test_[feature_workflow]`: `test_register_and_navigate()`, `test_stack_push_pop_workflow()`
+- Unit test functions: `test_*` prefix in snake_case
+- Integration test functions: `test_*` prefix in snake_case
+- Module in source: `#[cfg(test)] mod tests { ... }` at end of file
 
 **Structure:**
-```
-src/
-├── alias.rs           # ~330 lines (160 lines of tests inline)
-├── database.rs        # ~800 lines (425 lines of tests inline)
-├── fuzzy.rs           # ~296 lines (136 lines of tests inline)
-└── ...
 
-tests/
-└── integration.rs     # ~1600 lines (end-to-end CLI tests)
-```
+Unit tests are in the following source files:
+- `src/alias.rs` (lines 152-329): ~70 tests for alias validation, tag operations, error messages
+- `src/database.rs` (lines 373-799): ~30 tests for database CRUD, persistence, migration
+- `src/fuzzy.rs` (lines 159-295): ~15 tests for string matching and similarity scoring
+- `tests/integration.rs`: ~5+ integration tests for CLI workflow
 
 ## Test Structure
 
-**Suite Organization - Unit Tests:**
+**Suite Organization** (from `src/alias.rs` lines 152-329):
 ```rust
 #[cfg(test)]
 mod tests {
@@ -75,83 +65,19 @@ mod tests {
 }
 ```
 
-**Suite Organization - Integration Tests:**
-```rust
-fn goto_bin() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_goto-bin"))
-}
-
-#[test]
-fn test_register_and_navigate() {
-    let temp = tempdir().unwrap();
-    let test_dir = temp.path().join("testdir");
-    fs::create_dir(&test_dir).unwrap();
-
-    // Setup
-    let db_dir = temp.path().join("db");
-    fs::create_dir(&db_dir).unwrap();
-
-    // Execute
-    let mut cmd = goto_bin();
-    cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["-r", "test", test_dir.to_str().unwrap()]);
-    let output = cmd.output().unwrap();
-
-    // Assert
-    assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Registered"));
-}
-```
-
 **Patterns:**
-- **Setup phase:** Create temp directories, initialize databases
-- **Execute phase:** Call function or command, capture output/result
-- **Assert phase:** Verify behavior with assertions
-- **Cleanup:** Automatic via `tempdir()` scope on drop
+- Setup in individual test functions (no shared fixtures at test level)
+- Helper functions for common setup patterns: `create_test_db()` in `src/database.rs` (lines 379-384)
+- Teardown via dropping variables (tempfile cleanup is automatic)
+- Assertions grouped at end of test after setup and action
 
 ## Mocking
 
-**Framework:** `tempfile::tempdir()` crate for temporary filesystem isolation
+**Framework:**
+- Manual test doubles and fixtures (no mockall, mock crate, etc.)
+- `tempfile::tempdir()` for temporary database storage in tests
 
-**Patterns:**
-```rust
-use tempfile::tempdir;
-use std::fs;
-
-fn create_test_db() -> (Database, tempfile::TempDir) {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("aliases");
-    let db = Database::load_from_path(&path).unwrap();
-    (db, dir)  // TempDir dropped after test ends
-}
-
-#[test]
-fn test_with_temp_db() {
-    let (mut db, _dir) = create_test_db();
-    let alias = Alias::new("test", "/tmp/test").unwrap();
-    db.insert(alias);
-    // TempDir auto-cleanup when scope ends
-}
-```
-
-**Isolation Strategy:**
-- Each test uses unique `tempdir()` for database files
-- Environment variables set per-test: `cmd.env("GOTO_DB", &db_dir)`
-- Command execution in subprocesses prevents state pollution
-
-**What to Mock:**
-- Filesystem: Use `tempdir()` for all file operations
-- Database: Load fresh from temp paths; no shared state
-- Time-dependent behavior: Tests don't rely on wall-clock time (use Utc::now() captured in data)
-
-**What NOT to Mock:**
-- Core business logic: Test actual Alias, Database, validation
-- Actual command execution: Integration tests spawn real binary
-- Error conditions: Test real error paths with invalid inputs
-
-## Fixtures and Factories
-
-**Test Data:**
+**Patterns** (from `src/database.rs` lines 379-384):
 ```rust
 fn create_test_db() -> (Database, tempfile::TempDir) {
     let dir = tempdir().unwrap();
@@ -159,108 +85,106 @@ fn create_test_db() -> (Database, tempfile::TempDir) {
     let db = Database::load_from_path(&path).unwrap();
     (db, dir)
 }
+```
 
-// Setup helper in integration tests
+Integration tests use `std::process::Command` to invoke the binary:
+```rust
 fn goto_bin() -> Command {
     Command::new(env!("CARGO_BIN_EXE_goto-bin"))
 }
+
+#[test]
+fn test_register_and_navigate() {
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "test", test_dir.to_str().unwrap()]);
+    let output = cmd.output().unwrap();
+}
 ```
 
-**Example Fixture - Database with Data:**
+**What to Mock:**
+- Filesystem: Use `tempfile::tempdir()` for isolated test environments
+- CLI interaction: Use `std::process::Command::new()` to invoke binary subprocess
+- Database: Create fresh instance for each test via `create_test_db()`
+
+**What NOT to Mock:**
+- Core business logic (Alias, Database, fuzzy matching) - test directly
+- Error handling - use `Result` unwrap/match in tests to verify errors
+- Path resolution - use actual temp directories
+
+## Fixtures and Factories
+
+**Test Data** (from `src/database.rs` lines 391-406):
 ```rust
 #[test]
-fn test_find_similar() {
+fn test_insert_and_get() {
     let (mut db, _dir) = create_test_db();
+    let alias = Alias::new("test", "/tmp/test").unwrap();
+    db.insert(alias);
 
-    // Arrange
-    db.insert(Alias::new("projects", "/tmp/projects").unwrap());
-    db.insert(Alias::new("personal", "/tmp/personal").unwrap());
-    db.insert(Alias::new("work", "/tmp/work").unwrap());
+    assert!(!db.is_empty());
+    assert_eq!(db.len(), 1);
+    assert!(db.contains("test"));
 
-    // Act
-    let similar = db.find_similar("proj", 0.3);
+    let retrieved = db.get("test").unwrap();
+    assert_eq!(retrieved.name, "test");
+    assert_eq!(retrieved.path, "/tmp/test");
+}
+```
 
-    // Assert
-    assert!(similar.contains(&"projects".to_string()));
+**Factory Pattern** (from `src/alias.rs` lines 157-164):
+```rust
+#[test]
+fn test_new_alias() {
+    let alias = Alias::new("projects", "/home/user/projects").unwrap();
+    assert_eq!(alias.name, "projects");
+    // ... assertions
 }
 ```
 
 **Location:**
-- Helper functions at top of `tests` module in each file
-- `create_test_db()` in `database.rs` tests, reused throughout
-- Command construction in `tests/integration.rs`: `goto_bin()` helper
+- Helper functions defined at module level in test block
+- Test-specific imports via `use super::*;` to access private types
+- Temporary directories created inline via `tempdir().unwrap()`
 
 ## Coverage
 
-**Requirements:** No enforced coverage targets; coverage not configured in CI
+**Requirements:**
+- No enforced coverage target
+- Coverage tool: Not specified in Cargo.toml
+- View coverage: Would use `cargo tarpaulin` or `cargo llvm-cov` if installed
 
-**View Coverage:**
-```bash
-# Not currently set up; would require tarpaulin or llvm-cov
-# Manual coverage inspection: grep for `#[cfg(test)]` sections
-```
-
-**Coverage Observations:**
-- Unit tests: ~90% coverage of public APIs (most functions have dedicated tests)
-- `alias.rs`: 25 test cases covering validation, tagging, usage tracking
-- `database.rs`: 38 test cases covering CRUD, persistence, migration, metadata
-- `fuzzy.rs`: 15 test cases covering distance, similarity, matching
-- Integration tests: 35+ end-to-end workflows covering all commands
+**Current Coverage (observed):**
+- Core domain models heavily tested: Alias struct ~100% coverage in unit tests
+- Database persistence tested: load/save/migrate paths all tested
+- Error cases tested explicitly: see `src/alias.rs` lines 224-227 for error variant testing
+- Integration tests cover CLI workflows: register, list, navigate, tags
 
 ## Test Types
 
 **Unit Tests:**
-- Scope: Individual functions and methods in isolation
-- Approach: Direct function calls, assertions on return values
-- Example: `test_levenshtein_distance()` verifies algorithm correctness
-- Location: `#[cfg(test)]` modules within source files
-- Coverage: Core business logic, validation, error conditions
+- Scope: Single function or method in isolation
+- Approach: Create minimal required inputs, verify output/state change
+- Location: Co-located in source files in `#[cfg(test)]` blocks
+- Example: `test_record_use()` in `src/alias.rs` (lines 191-199) verifies use_count and last_used update
 
 **Integration Tests:**
-- Scope: Full CLI workflows with real filesystem, command invocation
-- Approach: Spawn binary as subprocess, capture stdout/stderr, verify output and exit codes
-- Examples:
-  - `test_register_and_navigate()`: Register alias, expand it
-  - `test_cleanup()`: Register invalid alias, cleanup, verify removal
-  - `test_import_strategies()`: Import with skip/overwrite/rename behaviors
-- Location: `tests/integration.rs`
-- Coverage: All public commands, error handling, persistence across invocations
+- Scope: Multi-component workflows (CLI -> config -> database -> filesystem)
+- Approach: Use subprocess invocation, temp directories, environment variables
+- Location: `tests/integration.rs` (lines 1-150+)
+- Example: `test_register_and_navigate()` in `tests/integration.rs` (lines 12-49) tests end-to-end registration and navigation
 
 **E2E Tests:**
-- Framework: Rust subprocess testing via `std::process::Command`
-- Not separate from integration tests; integration tests are end-to-end
+- Not separate from integration tests
+- Same mechanism: subprocess CLI invocation with temp directories
 
 ## Common Patterns
 
 **Async Testing:**
 - Not applicable; no async code in codebase
-- All operations are synchronous
 
-**Error Testing:**
+**Error Testing** (from `src/database.rs` lines 409-418):
 ```rust
-#[test]
-fn test_invalid_name_empty() {
-    let result = Alias::new("", "/home/user");
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_invalid_alias_name() {
-    let temp = tempdir().unwrap();
-    let db_dir = temp.path().join("db");
-    fs::create_dir(&db_dir).unwrap();
-
-    let mut cmd = goto_bin();
-    cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["-r", "-invalid", "/tmp"]);
-
-    let output = cmd.output().unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("invalid alias"));
-}
-
-// Pattern: Result matching
 #[test]
 fn test_add_fails_if_exists() {
     let (mut db, _dir) = create_test_db();
@@ -274,130 +198,90 @@ fn test_add_fails_if_exists() {
 }
 ```
 
-**Filesystem Testing:**
+Pattern: Use `matches!()` macro to check error type and structure without unpacking.
+
+**State Mutations** (from `src/database.rs` lines 731-745):
 ```rust
 #[test]
-fn test_migration() {
-    let dir = tempdir().unwrap();
-    let text_path = dir.path().join("aliases");
-    let toml_path = dir.path().join("aliases.toml");
-
-    // Write old format
-    let mut file = fs::File::create(&text_path).unwrap();
-    writeln!(file, "projects /home/user/projects").unwrap();
-    writeln!(file, "work /home/user/work").unwrap();
-    drop(file);
-
-    // Load triggers migration
-    let db = Database::load_from_path(&text_path).unwrap();
-    assert_eq!(db.len(), 2);
-    assert!(toml_path.exists());
-    assert!(dir.path().join("aliases.txt.bak").exists());
-}
-```
-
-**Persistence Testing:**
-```rust
-#[test]
-fn test_save_and_reload() {
+fn test_auto_saves_on_drop() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("aliases");
 
-    // Write data
     {
         let mut db = Database::load_from_path(&path).unwrap();
-        let mut alias = Alias::new("test", "/tmp/test").unwrap();
-        alias.add_tag("work");
-        alias.use_count = 5;
+        let alias = Alias::new("dropped", "/tmp/dropped").unwrap();
+        db.insert(alias);
+        // Don't call save() - let Drop handle it
+    }
+
+    // Reopen and verify it was saved
+    let db = Database::load_from_path(&path).unwrap();
+    assert!(db.contains("dropped"));
+}
+```
+
+Pattern: Use scope blocks to trigger `Drop` behavior, then reopen/reload to verify side effects persisted.
+
+**Dirty Flag Testing** (from `src/database.rs` lines 747-780):
+```rust
+#[test]
+fn test_dirty_flag_not_set_on_read() {
+    // Create and populate db
+    {
+        let mut db = Database::load_from_path(&path).unwrap();
+        let alias = Alias::new("test", "/tmp/test").unwrap();
         db.insert(alias);
         db.save().unwrap();
     }
 
-    // Reload and verify
-    let db = Database::load_from_path(&path).unwrap();
-    assert_eq!(db.len(), 1);
-    let alias = db.get("test").unwrap();
-    assert_eq!(alias.use_count, 5);
-    assert!(alias.has_tag("work"));
+    let mtime_before = fs::metadata(&toml_path).unwrap().modified().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    {
+        let db = Database::load_from_path(&path).unwrap();
+        let _ = db.get("test");
+        // On drop, should NOT write since no changes were made
+    }
+
+    let mtime_after = fs::metadata(&toml_path).unwrap().modified().unwrap();
+    assert_eq!(mtime_before, mtime_after);
 }
 ```
 
-**Subprocess Output Verification:**
+Pattern: Verify optimization behavior by comparing file timestamps before/after read operations.
+
+**Integration Test Pattern** (from `tests/integration.rs` lines 12-49):
 ```rust
 #[test]
-fn test_export_import() {
-    // Export from first database
+fn test_register_and_navigate() {
+    let temp = tempdir().unwrap();
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    // Register alias
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.arg("--export");
-    let output = cmd.output().unwrap();
-    assert!(output.status.success());
-    let export_content = String::from_utf8_lossy(&output.stdout);
-    assert!(export_content.contains("test"));
+    cmd.args(["-r", "test", test_dir.to_str().unwrap()]);
 
-    // Import into second database
-    let mut cmd = goto_bin();
-    cmd.env("GOTO_DB", &db_dir2);
-    cmd.args(["--import", export_file.to_str().unwrap()]);
     let output = cmd.output().unwrap();
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("imported"));
+    assert!(output.status.success(), "Register failed: {}", ...);
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Registered"));
+
+    // Navigate (verify output)
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-x", "test"]);
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success(), "Expand failed: {}", ...);
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), test_dir.to_str().unwrap());
 }
 ```
 
-**Multi-Operation Workflows:**
-```rust
-#[test]
-fn test_stack_multiple_push_operations() {
-    // Push from dir_a to aliasb (dir_b)
-    let mut cmd = goto_bin();
-    cmd.current_dir(&dir_a);
-    cmd.args(["-p", "aliasb"]);
-    assert!(cmd.output().unwrap().status.success());
-
-    // Push from dir_b to aliasc (dir_c)
-    let mut cmd = goto_bin();
-    cmd.current_dir(&dir_b);
-    cmd.args(["-p", "aliasc"]);
-    assert!(cmd.output().unwrap().status.success());
-
-    // Pop should return dir_b (LIFO)
-    let mut cmd = goto_bin();
-    cmd.args(["-o"]);
-    let output = cmd.output().unwrap();
-    assert!(String::from_utf8_lossy(&output.stdout).contains(dir_b.to_str().unwrap()));
-
-    // Pop should return dir_a
-    let mut cmd = goto_bin();
-    cmd.args(["-o"]);
-    let output = cmd.output().unwrap();
-    assert!(String::from_utf8_lossy(&output.stdout).contains(dir_a.to_str().unwrap()));
-
-    // Pop on empty stack fails
-    let mut cmd = goto_bin();
-    cmd.args(["-o"]);
-    assert!(!cmd.output().unwrap().status.success());
-    assert_eq!(cmd.output().unwrap().status.code(), Some(1));
-}
-```
-
-## Test Isolation and Cleanup
-
-**Automatic Cleanup:**
-- `tempdir()` scope: Files deleted on TempDir drop (automatically at test end)
-- No manual cleanup required
-- Each test has isolated database directory
-
-**State Between Tests:**
-- No shared state; each test creates fresh database in temp directory
-- Environment variables isolated per subprocess invocation
-- No global mutable state in tests
-
-**Setup/Teardown:**
-- Setup: Helper functions like `create_test_db()` or inline temp directory creation
-- Teardown: Automatic via Rust scope-based cleanup (Drop trait on TempDir)
-- No explicit teardown code needed
+Pattern: Setup temp dirs, run subprocess, check exit status and stdout/stderr.
 
 ---
 

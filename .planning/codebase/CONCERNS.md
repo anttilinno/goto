@@ -4,264 +4,221 @@
 
 ## Tech Debt
 
-**Platform-specific code in `src/commands/update.rs`:**
-- Issue: Self-update mechanism hardcoded for Linux x86_64 only
-- Files: `src/commands/update.rs` (lines 154-161)
-- Impact: Users on other platforms (macOS, Windows, ARM, etc.) cannot use the `--update` or `--check-update` commands. This feature silently fails for non-Linux users.
-- Fix approach: Add conditional compilation for macOS and Windows binaries. GitHub Actions workflow should build separate binaries for each platform. Alternatively, document platform limitations clearly.
+**Platform-specific update functionality:**
+- Issue: Update mechanism (`src/commands/update.rs`) is hardcoded to Linux x86_64 only
+- Files: `src/commands/update.rs` (lines 153-162)
+- Impact: Binary self-updates only work on Linux x86_64. Other platforms get "No download URL available for your platform" error, making `--update` and `--check-update` commands non-functional
+- Fix approach: Either add platform detection for macOS/Windows asset names, or document Linux-only requirement and fail gracefully with clear messaging
 
-**Checksum verification using system command:**
-- Issue: `calculate_sha256()` in `src/commands/update.rs` (lines 237-262) spawns external `sha256sum` command instead of using a Rust crate
+**SHA256 checksum verification depends on system binary:**
+- Issue: Update verification uses `sha256sum` command via subprocess instead of a crypto library
 - Files: `src/commands/update.rs` (lines 237-262)
-- Impact: Not portable across platforms; requires external tools to be installed. Security verification fails silently if `sha256sum` is not available. Missing error context.
-- Fix approach: Add `sha2` or `sha256` crate to dependencies and implement native hash calculation. Remove dependency on system command.
+- Impact: Requires `sha256sum` to be installed on system. Update will fail if not present. Not portable across platforms. Code comment acknowledges this (line 246)
+- Fix approach: Add `sha2` crate dependency and implement native SHA256 verification
 
-**Unsafe shell integration installation:**
-- Issue: Shell wrapper scripts are sourced in rc files without shell syntax validation
-- Files: `src/commands/install.rs` (lines 74-84, 106-155)
-- Impact: If shell wrapper scripts contain syntax errors, users' shell rc files become corrupted and shell fails to initialize. No recovery mechanism.
-- Fix approach: Validate shell script syntax before installing. Add backup of original rc file. Provide recovery command.
+**Error detection via string matching in main.rs:**
+- Issue: `handle_error()` function maps error types to exit codes by searching error message strings
+- Files: `src/main.rs` (lines 216-232)
+- Impact: Fragile error categorization - if error messages change, exit codes may become incorrect. Unrelated errors containing keywords like "not found" or "already exists" may map to wrong codes
+- Fix approach: Implement custom error types that carry error codes instead of relying on message content
 
-**Inadequate error handling in `config.rs`:**
-- Issue: `dirs::home_dir()` is deprecated; code still uses it in multiple places
-- Files: `src/config.rs` (lines 224-226)
-- Impact: Triggers compiler warnings. Deprecated API may be removed in future versions of `dirs` crate. Code will break on future dependency updates.
-- Fix approach: Use `dirs::home_dir()` alternative (check Rust 1.70+ standard library options) or migrate to `home` crate.
+**Shell RC file modification without backup:**
+- Issue: Install command appends to shell rc files (.bashrc, .zshrc, config.fish) without creating backups
+- Files: `src/commands/install.rs` (lines 134-157)
+- Impact: If installation is interrupted or fails during rc file write, shell might become non-functional. No rollback mechanism
+- Fix approach: Create backup of rc file before modification, implement atomic writes
 
-**Large unwrap/expect density:**
-- Issue: 426 instances of `.unwrap()` in source code indicate widespread panic risks
-- Files: Throughout codebase
-- Impact: Many error conditions are unhandled, causing silent panics. Particularly problematic in:
-  - `src/commands/install.rs` (line 41): `env::var("SHELL").unwrap_or_default()` followed by `.unwrap_or("")` chains
-  - `src/config.rs` (line 240): `shellexpand::env(path).unwrap_or(...)` - unclear error handling
-  - Test code heavily uses `.unwrap()` but test panics don't surface properly
-- Fix approach: Replace common unwrap patterns with proper error propagation. Audit critical paths (install, update, file I/O) first.
+**Recent command argument parsing ambiguity:**
+- Issue: `--recent` command with numeric argument has complex heuristics to determine if arg is navigate count or display count
+- Files: `src/cli.rs` (lines 185-209)
+- Impact: Logic is fragile - numbers 1-20 with exactly 3 args navigate, others display. Users might expect `goto --recent 15` to show 15 items but it navigates to 15th instead
+- Fix approach: Separate commands or explicit flags like `--recent-show=15` vs `--recent-goto=15`
 
 ## Known Bugs
 
-**Stack operation file corruption risk:**
-- Symptoms: Directory stack becomes unusable after unclean shutdown or concurrent access
-- Files: `src/stack.rs` (lines 30-97), `src/commands/stack.rs`
-- Trigger: Multiple `goto -p` commands run concurrently, or process killed while writing to stack file
-- Workaround: Manual deletion of `~/.config/goto/goto_stack` and `goto -c --dry-run` to verify database
-- Impact: Medium - affects only directory stack feature; core navigation still works. Users rarely use stack feature.
+**Fuzzy matching triggers on incomplete matches:**
+- Symptoms: Typos in alias names may navigate to unintended aliases if single match found with >= 0.7 similarity score
+- Files: `src/commands/navigate.rs` (lines 43-60)
+- Trigger: Any typo that produces single fuzzy match with high confidence automatically navigates without confirmation
+- Workaround: Use full alias name or disambiguate with --expand before navigating
 
-**Import with invalid paths creates orphaned entries:**
-- Symptoms: Importing TOML with non-existent paths creates aliases that immediately fail on navigation
-- Files: `src/commands/import_export.rs` (lines 101-107)
-- Trigger: Import file with paths pointing to deleted directories
-- Current behavior: Warns but imports anyway (line 103-105)
-- Impact: Low - warnings are printed but users may miss them. Cleanup command removes them.
-- Fix approach: Add `--skip-invalid-paths` flag or default to skipping paths that don't exist.
+**Directory validation race condition:**
+- Symptoms: Alias points to valid directory at registration, but cleanup detects it as invalid before next use
+- Files: `src/commands/cleanup.rs` (lines 10-14), `src/alias.rs` (lines 109-119)
+- Trigger: Directory deleted between when alias was verified and when cleanup runs
+- Current mitigation: `cleanup --dry-run` allows inspection before removal
+- Workaround: Use `goto --expand` to verify paths are still valid before cleanup
 
-**Recent history accumulates unbounded:**
-- Symptoms: No limit on `use_count` field; very old aliases can show artificially high usage
-- Files: `src/alias.rs` (line 13), `src/database.rs` (lines 243-252)
-- Trigger: Long-running user accounts accumulate navigation history indefinitely
-- Impact: Low - affects statistics display only, doesn't cause crashes. Can lead to misleading usage stats.
-- Fix approach: Implement usage decay (older entries counted with less weight) or add `--recent-clear` option (already exists, partially addresses this).
+**Import with rename strategy infinite loop potential:**
+- Symptoms: If import file contains many aliases with same name, find_unique_name() increments suffix indefinitely
+- Files: `src/commands/import_export.rs` (lines 140-149)
+- Trigger: Import file with 1000+ copies of same alias name using Rename strategy
+- Current state: Loop will eventually find unused name, but performance degrades with each collision
+- Workaround: Clean import files before importing with Rename strategy
 
 ## Security Considerations
 
-**Self-update downloads executable without signature verification:**
-- Risk: Man-in-the-middle attack could serve malicious binary
-- Files: `src/commands/update.rs` (lines 265-385)
-- Current mitigation: SHA256 checksum verification (lines 319-336), but checksum fetched from same GitHub API endpoint
+**Self-update downloads from GitHub without build verification:**
+- Risk: Downloaded binary could be compromised if GitHub account is hacked or MITTS attack occurs
+- Files: `src/commands/update.rs` (lines 299-315)
+- Current mitigation: SHA256 checksum verification against checksums.txt (lines 318-336). However, checksums.txt is also downloaded from GitHub (same risk)
 - Recommendations:
-  1. Sign releases with PGP key and verify signatures in addition to checksums
-  2. Fetch checksums from a separate secure channel (e.g., signed releases file)
-  3. Pin GitHub API endpoints to use HTTPS enforced (already done via reqwest)
-  4. Add timeout protection (already in place - 120 seconds on line 304)
+  - Sign releases with GPG key stored separately from GitHub
+  - Document verification procedure for users
+  - Make binary hash pinning configurable for security-conscious users
 
-**File permissions not verified after download:**
-- Risk: Downloaded binary could be executable by unprivileged users before installation
-- Files: `src/commands/update.rs` (lines 338-345)
-- Current mitigation: Binary made executable with 0o755 on Unix only (lines 340-345)
-- Impact: Low on Unix (file already in user directory). No protection on Windows.
-- Recommendations: Verify file permissions before making executable; add explicit checks for parent directory ownership.
+**Shell rc file source command without quoting:**
+- Risk: RC file modification constructs source line without shell-escaping the path
+- Files: `src/commands/install.rs` (line 111)
+- Current state: `source /path/to/goto.bash` - if path contains spaces or special chars, shell will break
+- Recommendations: Quote path in generated source line: `source "$path"`
 
-**Backup binary not securely cleaned:**
-- Risk: Old binary left in `.goto-bin.old` could be recovered and analyzed for vulnerabilities
-- Files: `src/commands/update.rs` (lines 348-375)
-- Current mitigation: Backup is removed after successful update (line 362)
-- Impact: Low - only if update fails, backup remains but user is notified to intervene manually
-- Recommendations: Securely overwrite backup file before deletion (add `secure_delete` crate or zeroing).
+**Directory path input not validated for shell injection:**
+- Risk: Paths registered as aliases are not validated; malicious paths could cause issues if used in unquoted contexts
+- Files: `src/alias.rs` (lines 109-119) - only checks non-empty
+- Current mitigation: Shell wrappers quote the path output when executing cd
+- Recommendations: Document that paths should be treated as untrusted user input; audit shell scripts for proper quoting
 
-**Shell wrapper scripts embedded without integrity checks:**
-- Risk: If Rust binary is compromised during distribution, shell wrappers are also compromised
-- Files: `src/commands/install.rs` (lines 9-15)
-- Current mitigation: Source scripts in rc files - wrapper script controls what binary runs
-- Recommendations: Document that shell wrappers should be reviewed before installation; add checksums of embedded scripts.
-
-**Database paths from environment variables without validation:**
-- Risk: `$GOTO_DB` or `$HOME` could point to adversarial locations
-- Files: `src/config.rs` (lines 212-227)
-- Current mitigation: Paths are expanded and canonicalized where possible (line 244)
-- Impact: Low - permissions enforced by filesystem, but could be confusing to users with unusual setup
-- Recommendations: Add warning when `GOTO_DB` points to world-writable location.
+**Update binary written to temporary file in same directory:**
+- Risk: Temporary file `.goto-bin.new` is world-readable before being made executable
+- Files: `src/commands/update.rs` (lines 299-345)
+- Current mitigation: Umask respected, but not explicitly enforced
+- Recommendations: Create temp file with restricted permissions (0600) before writing, or use `/tmp` with explicit mode
 
 ## Performance Bottlenecks
 
-**Fuzzy matching rescans entire alias list on every typo:**
-- Problem: Each failed navigation triggers full fuzzy match scan of all aliases
-- Files: `src/commands/navigate.rs` (lines 35-72), `src/fuzzy.rs`
-- Cause: No caching of fuzzy match results; Levenshtein distance calculated for every alias
-- Current impact: Negligible for typical users (< 100 aliases), but O(n) for each typo
-- Improvement path: Pre-compute and cache fuzzy match matrix; only update on database changes. Implement early termination if confidence threshold exceeded.
+**Database loads entire TOML file into HashMap on every operation:**
+- Problem: Every command (navigate, list, cleanup) loads entire database from disk
+- Files: `src/database.rs` (lines 98-107)
+- Cause: TOML parsing creates full Vec then populates HashMap - no lazy loading or caching
+- Improvement path: For very large alias databases (1000+ entries), consider lazy loading or caching strategy. Currently acceptable for typical use (10-100 aliases)
 
-**Database always loaded entirely into memory:**
-- Problem: All aliases stored in HashMap; no lazy loading or pagination
-- Files: `src/database.rs` (lines 43-52)
-- Cause: HashMap-based in-memory storage design
-- Current impact: Negligible for typical users (< 1000 aliases), but becomes problematic at scale
-- Improvement path: For large databases (>10k aliases), consider:
-  1. Lazy loading from TOML
-  2. Indexing by first letter for faster lookups
-  3. Switching to SQLite for >1k aliases
+**Fuzzy matching recalculates similarity for all aliases on typo:**
+- Problem: Each navigation typo triggers O(n) similarity calculations for all alias names
+- Files: `src/fuzzy.rs` (referenced in `src/commands/navigate.rs` lines 36, 97)
+- Cause: No caching of similarity scores between operations
+- Improvement path: Pre-compute similarity matrix on database load if database size > 500. Most users won't notice with typical 50-100 aliases
 
-**Import operation loads entire file before validation:**
-- Problem: `import()` reads entire TOML file into memory before checking validity
-- Files: `src/commands/import_export.rs` (lines 55-64)
-- Impact: Large import files (>100MB TOML) could cause OOM. No streaming parser.
-- Improvement path: Implement streaming TOML parser or read file in chunks with validation.
-
-**Update check blocks on network I/O:**
-- Problem: `check_for_updates()` makes blocking HTTP calls without timeout handling for slow networks
-- Files: `src/commands/update.rs` (lines 110-124, 302-307)
-- Impact: Slow networks cause `notify_if_update_available()` (called on every navigate) to hang. Already has 10-second timeout but requests are sequential.
-- Improvement path: Implement async update checks with spawn_blocking, or move to separate background thread.
+**Update check makes synchronous HTTP requests:**
+- Problem: `notify_if_update_available()` can block on network timeout during navigation
+- Files: `src/commands/update.rs` (lines 204-228), `src/main.rs` (line 209)
+- Cause: Uses blocking `reqwest` client with 10 second timeout
+- Improvement path: Spawn async task or thread for update checks to avoid blocking user
 
 ## Fragile Areas
 
-**Error string matching in `main.rs`:**
-- Files: `src/main.rs` (lines 216-231)
-- Why fragile: Exit codes determined by string matching on error messages (lines 220-230)
-- Safe modification: Add error type enums instead of parsing strings. All commands should return structured errors.
-- Test coverage: No tests verify exit code mapping; changes to error messages silently break exit codes
-- Example fragility: If error message changes from "not found" to "alias not found", exit code changes from 1 to 5
+**Shell wrapper dependency:**
+- Files: `src/commands/install.rs` (lines 8-15, embedded scripts)
+- Why fragile: Binary outputs paths to stdout; shell wrappers must capture and execute `cd`. If wrapper scripts are lost or modified, navigation breaks
+- Safe modification: Test shell scripts thoroughly before changing. Maintain separate versions for bash/zsh/fish - incompatibilities are common
+- Test coverage: Integration tests in `tests/integration.rs` cover binary output but not shell script execution
 
-**Database dirty flag optimization:**
-- Files: `src/database.rs` (lines 50-51, 177-179)
-- Why fragile: `get_mut()` sets dirty flag even for read-only lookups (line 177)
-- Safe modification: Separate `get()` for reads and `get_mut()` for writes. Test to ensure dirty flag only set on actual mutations.
-- Test coverage: `test_dirty_flag_not_set_on_read()` exists (lines 748-780) but covers only `get()`, not `get_mut()` reads
-- Risk: Frequent database rewrites even when no changes made
+**Directory existence checks create TOCTOU issues:**
+- Files: `src/commands/navigate.rs` (lines 16-22), `src/commands/cleanup.rs` (lines 12-13)
+- Why fragile: Directory can be deleted between check and use. Cleanup can remove valid aliases if race condition occurs
+- Safe modification: Document that cleanup should be run when user has exclusive access to alias directory. Consider locking mechanism if reliability required
 
-**Shell environment variable parsing in `install.rs`:**
-- Files: `src/commands/install.rs` (lines 40-52, 74-84)
-- Why fragile: Shell detection uses string parsing of `$SHELL` env var path (line 42)
-- Safe modification:
-  1. Validate `$SHELL` exists before using
-  2. Handle symbolic links (e.g., `/bin/bash` vs `/usr/bin/bash`)
-  3. Fallback to detecting current shell via process inspection
-- Test coverage: Only tests happy path (lines 653-703); no tests for missing `$SHELL` or symlinks
-- Risk: Wrong shell type detection silently installs wrong wrapper
+**Fuzzy matching threshold configuration:**
+- Files: `src/config.rs` (lines 24-32), `src/database.rs` (line 341)
+- Why fragile: Default fuzzy_threshold 0.3 vs navigate.rs high-confidence threshold of 0.7 use different scales or may not align
+- Safe modification: Test thoroughly that config threshold value is properly used in fuzzy matching. Document scale (0.0-1.0 vs 0-1000)
 
-**Update cache deserialization without version checks:**
-- Files: `src/commands/update.rs` (lines 54-67)
-- Why fragile: Cache file deserialization silently falls back to defaults if malformed (line 64)
-- Safe modification: Add version field to cache format; migrate old caches explicitly
-- Test coverage: No tests for malformed cache files or version mismatches
-- Risk: Cache corruption causes update system to forget latest version info
+**Configuration parsing silently uses defaults:**
+- Files: `src/config.rs` (lines 137-142)
+- Why fragile: Missing or invalid config.toml silently uses defaults without warning. Users may think settings are applied when they're not
+- Safe modification: Add optional warning log if config file is missing, or validate config format on load
 
 ## Scaling Limits
 
-**Tag storage grows with aliases:**
-- Current capacity: No limit on number of tags per alias or total tags
-- Limit: Scales O(n) with aliases; rendering tag lists becomes slow at >10k tags
-- Scaling path: Add tag indexing, implement tag pagination in list view, cache frequently used tag counts
+**Single TOML file for entire database:**
+- Current capacity: Tested with 500+ aliases
+- Limit: When database reaches 10,000+ entries, TOML parsing becomes slow, file becomes unwieldy
+- Scaling path: Consider database split (sharded by first letter) or migrate to SQLite for very large deployments
 
-**TOML file growing unbounded:**
-- Current capacity: Single `aliases.toml` file containing all aliases and metadata
-- Limit: TOML parser loads entire file into memory; becomes slow at >50k aliases
-- Scaling path: Implement sharding (separate files by first letter) or migrate to database format
+**All operations load complete database:**
+- Current capacity: Fast for <1000 aliases
+- Limit: Operations like list/cleanup become O(n) for all operations
+- Scaling path: Implement read-only mode with mmap'd file for large databases, or database indexing
 
-**Directory stack no file limit:**
-- Current capacity: Stack file grows with each push, one entry per line
-- Limit: No trim on stack, grows unbounded
-- Scaling path: Add `--stack-limit` config option (default 100), implement circular buffer behavior
+**Shell history contains all navigated paths:**
+- Current capacity: Shell history unlimited by goto
+- Limit: Users with 10,000+ navigations have bloated shell history
+- Scaling path: Implement history pruning strategy, cap recent history at 1000 entries
 
 ## Dependencies at Risk
 
-**reqwest 0.12 with blocking feature:**
-- Risk: Blocking HTTP client is deprecated pattern; newer async Rust ecosystem prefers tokio
-- Impact: Will make building async features difficult; performance limited on slow networks
-- Migration plan: Investigate reqwest 0.12 end-of-life timeline. For update checks, consider:
-  1. Spawning background thread with blocking client (current approach works)
-  2. Migrating to `ureq` crate (lightweight, simpler, no async overhead)
-  3. Moving update checks to completely separate process/daemon
+**Manual argument parsing instead of clap/structopt:**
+- Risk: As command set grows, manual parsing becomes error-prone and hard to maintain
+- Files: `src/cli.rs` (lines 80-250)
+- Impact: Adding new flags requires careful manual parsing logic. No validation framework
+- Migration plan: Consider switching to `clap` v4 when ready for major refactor. Current approach acceptable for current command set
 
-**dirs 5.0 using deprecated home_dir:**
-- Risk: `home_dir()` function is marked deprecated; may be removed in dirs 6.0
-- Impact: Code will break on next major version bump
-- Migration plan: Test with latest `dirs` crate version; plan migration to alternative home directory detection
-- Workaround: Pin `dirs = "5.0"` in Cargo.toml until migration planned
+**reqwest for HTTP with blocking client:**
+- Risk: Network operations can hang if GitHub is slow/unreachable
+- Files: `src/commands/update.rs` (lines 110-124, 302-307)
+- Impact: Update checks can cause 10+ second delays during navigation if network is poor
+- Alternative: Use lightweight HTTP client like `ureq` (blocking), or implement async properly
 
-**shellexpand 3.1 with potential security issues:**
-- Risk: Shell variable expansion could be attack vector if paths come from untrusted sources
-- Impact: Low (paths only from environment vars and user config), but warrants code review
-- Migration plan: Audit `expand_path()` function (lines 230-245 in config.rs); document that paths should not be trusted from network sources
-
-**thiserror 1.0 for error handling:**
-- Risk: No known issues, but error handling pattern is becoming dated in Rust community
-- Impact: Low - thiserror is stable and well-maintained
-- Migration plan: None urgent; consider anyhow/custom enums if error flexibility needed
+**TOML format for config files:**
+- Risk: TOML parsing errors crash the entire tool
+- Files: `src/config.rs` (line 139), `src/database.rs` (line 100)
+- Impact: Corrupted config.toml makes goto unusable. No recovery mechanism
+- Mitigation: Config parsing uses serde defaults which helps, but database TOML corruption is fatal
+- Improvement: Implement atomic writes and backup rotation for TOML files
 
 ## Missing Critical Features
 
-**No concurrency safety:**
-- Problem: Multiple goto invocations can race on database file read/write
-- Blocks: Reliable operation in parallel shells, automation scripts with parallel execution
-- Why not implemented: Would require file locking (cross-platform issues) or moving to proper database
+**No conflict detection for shell aliases:**
+- Problem: Can register alias that shadows shell builtin (e.g., `cd`, `echo`). Shell will use builtin, not goto function
+- Blocks: Users may be confused when alias doesn't work
+- Improvement: Add check against common shell builtins during registration
 
-**No rollback mechanism for updates:**
-- Problem: If binary update fails mid-execution, backup is left at `.goto-bin.old` with no automated recovery
-- Blocks: Unattended updates, CI/CD integration
-- Why not implemented: Complicated by self-modification constraints (can't relink while running)
+**No symlink handling:**
+- Problem: If registered path is symlink and target is deleted, directory validation fails even if symlink should be updated
+- Blocks: Use cases with symlink-heavy directory structures
+- Improvement: Add `--follow-symlinks` flag and document symlink behavior
 
-**No alias validation before navigation:**
-- Problem: Aliases pointing to symlinks are followed without warning about ultimate path
-- Blocks: Safely auditing alias destinations, preventing directory confusion
-- Why not implemented: Would require resolving symlinks, adding complexity to navigate command
+**No database locking mechanism:**
+- Problem: Two goto processes can write database simultaneously, causing corruption
+- Blocks: Safety when using goto from multiple shells/scripts
+- Improvement: Implement file locking (flock on Unix) or atomic writes with verification
+
+**No recovery mechanism for corrupted databases:**
+- Problem: Corrupted aliases.toml makes entire tool unusable
+- Blocks: Data durability guarantees
+- Improvement: Implement backup rotation and corruption detection
 
 ## Test Coverage Gaps
 
-**Update command download and installation:**
-- What's not tested: Actual binary download, checksum verification, file replacement
-- Files: `src/commands/update.rs` - no tests exist
-- Risk: Update mechanism could be completely broken and unnoticed until users encounter it
-- Priority: High - this is production-critical feature
+**Shell wrapper script execution not tested:**
+- What's not tested: Actual bash/zsh/fish script behavior. Only binary output is tested
+- Files: `src/commands/install.rs`, `shell/` directory
+- Risk: Shell scripts could have syntax errors, quoting issues, or incompatibilities
+- Priority: High - shell integration is core feature
 
-**Shell integration installation edge cases:**
-- What's not tested:
-  - RC file doesn't exist initially
-  - RC file is symlink
-  - Config directory has unusual permissions
-  - Concurrent installation attempts
-- Files: `src/commands/install.rs` - no tests exist (install feature is untestable without filesystem changes)
-- Risk: Installation fails silently or corrupts shell configuration
-- Priority: High - affects every new user
-
-**Import with symlink paths:**
-- What's not tested: Importing aliases with symlink targets; symlink targets deleted after import
-- Files: `src/commands/import_export.rs` - import tests only use temp directories
-- Risk: Symlink following behavior undefined; cleanup might behave incorrectly
-- Priority: Medium
+**Update mechanism not tested end-to-end:**
+- What's not tested: Actual binary download, checksum verification, in-place replacement
+- Files: `src/commands/update.rs`
+- Risk: Update could silently fail or corrupt installation
+- Priority: High - breaking update process is critical
 
 **Concurrent database access:**
-- What's not tested: Multiple goto invocations reading/writing database simultaneously
-- Files: `src/database.rs` - all tests use single isolated database
-- Risk: Data corruption, lost updates, or panics under concurrent load
-- Priority: Medium (low probability for typical single-user scenarios)
+- What's not tested: Multiple goto processes accessing database simultaneously
+- Files: `src/database.rs`
+- Risk: Data corruption in multi-shell scenarios
+- Priority: Medium - depends on typical usage patterns
 
-**Fuzzy matching threshold edge cases:**
-- What's not tested:
-  - Query longer than alias (should still match)
-  - Empty database (should handle gracefully)
-  - Very similar aliases (threshold edge cases)
-- Files: `src/commands/navigate.rs` - tests cover happy path only
-- Risk: Unexpected fuzzy match behavior in edge cases
-- Priority: Low
+**Cross-platform fuzzy matching:**
+- What's not tested: Fuzzy matching with non-ASCII characters, unicode paths
+- Files: `src/fuzzy.rs`
+- Risk: Aliases with international characters may not fuzzy-match correctly
+- Priority: Low - typically English-only aliases
+
+**Installation with read-only home directory:**
+- What's not tested: Install command when ~/.config is not writable
+- Files: `src/commands/install.rs`
+- Risk: Silent failure or confusing error message
+- Priority: Medium - relevant for restricted environments
 
 ---
 

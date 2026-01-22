@@ -5,192 +5,189 @@
 ## Naming Patterns
 
 **Files:**
-- Snake case: `src/alias.rs`, `src/database.rs`, `src/fuzzy.rs`
-- Command modules in `src/commands/` follow snake_case: `register.rs`, `import_export.rs`, `navigate.rs`
-- Test files: inline `#[cfg(test)]` modules within source files (not separate test directories)
-- Integration tests in `tests/integration.rs` follow snake_case naming
+- Lowercase with underscores: `alias.rs`, `database.rs`, `fuzzy.rs`
+- Command modules in `src/commands/` named after command function: `register.rs`, `navigate.rs`, `cleanup.rs`, `import_export.rs`
+- Test modules co-located in same file with `#[cfg(test)]` blocks
 
 **Functions:**
-- Snake case for all functions: `validate_alias()`, `find_similar()`, `record_usage()`, `levenshtein_distance()`
-- Helper functions (private) use leading underscore rarely; most are public module functions
-- Command entry points are simple names: `register()`, `navigate()`, `cleanup()`
+- snake_case throughout: `levenshtein_distance()`, `validate_alias()`, `record_usage()`, `register_with_tags()`
+- Action verbs for side-effecting functions: `validate_*`, `record_*`, `navigate()`, `expand()`
+- Query/read functions don't have `get_` prefix: `all()`, `contains()`, `names()`, `is_empty()`
+- Mutable operations mark parameters explicitly: `&mut Database`, `&mut db`
 
 **Variables:**
-- Snake case: `db`, `config`, `alias`, `use_count`, `last_used`, `temp_dir`, `toml_path`
-- Boolean flags use `is_`, `has_`, `should_` prefixes: `is_empty()`, `has_tag()`, `should_save()`
-- Counters use `_count` suffix: `use_count`, `match_count`, `office_count`
-- Paths use `_path` suffix: `toml_path`, `text_path`, `config_path`, `aliases_path`
+- snake_case: `db`, `alias`, `path_str`, `use_count`, `last_used`, `created_at`
+- Iteration uses underscore for unused: `_dir` in test fixtures (see `src/database.rs` line 383)
+- Field abbreviations minimized: `db` for database is acceptable
 
 **Types:**
-- Struct names: PascalCase: `Alias`, `Database`, `Config`, `AliasError`, `DatabaseError`
-- Enum names: PascalCase: `Command`, `ImportStrategy`, `ShellType`
-- Enum variants: PascalCase with descriptive content: `InvalidAlias { alias, reason }`, `NotFound(String)`
-- Type aliases: rarely used; prefer explicit types
-
-**Constants:**
-- UPPER_SNAKE_CASE for module constants: `VERSION`, `VALID_ALIAS_PATTERN`, `VALID_TAG_PATTERN`
-- Used with `const` and `LazyLock` for static regexes
+- PascalCase for struct/enum names: `Alias`, `Database`, `Command`, `AliasError`, `DatabaseError`
+- Error types end with `Error`: `AliasError`, `DatabaseError`, `ConfigError`
+- Enum variants PascalCase: `InvalidAlias`, `NotFound`, `AlreadyExists`, `DirectoryNotFound`
 
 ## Code Style
 
 **Formatting:**
-- Default Rust formatting (implicitly follows rustfmt conventions)
-- 4-space indentation (Rust standard)
-- No explicit `.rustfmt.toml` found; uses Cargo defaults
-- Line length appears unconstrained (some lines exceed 100 chars)
+- Edition 2021 Rust with `cargo fmt` standard formatting
+- No explicit formatter configuration detected; defaults apply
+- Line length appears to follow standard 100-char Rust conventions
 
 **Linting:**
-- No explicit `.clippy.toml` or linting configuration found
-- Code uses idiomatic Rust patterns suggesting clippy compliance
-- No strict linting rules enforced in CI config
-
-**Documentation:**
-- Module-level docs: `//! [description]` at file head (e.g., `src/alias.rs`, `src/main.rs`)
-- Public item docs: `///` format with brief descriptions
-- Example: `/// Validate that an alias name is acceptable`
-- Examples: Provided via inline code in integration tests, not doc tests
-- No public doc comments on private functions
+- No clippy config detected; using default Rust lints
+- `#![allow(...)]` not observed in codebase
+- No warning suppressions found
 
 ## Import Organization
 
 **Order:**
-1. Standard library imports: `use std::...;` (e.g., `use std::fs;`, `use std::path::{Path, PathBuf};`)
-2. External crate imports: `use chrono::...;`, `use serde::...;`, `use thiserror::Error;`
-3. Internal crate imports: `use crate::alias::...;`, `use crate::database::Database;`
-4. Often grouped by functionality with blank lines between groups
+1. `use std::` standard library imports
+2. External crate imports (serde, chrono, toml, thiserror, etc.)
+3. Local crate imports (self::, crate::)
+
+Example from `src/database.rs` (lines 3-13):
+```rust
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use thiserror::Error;
+
+use crate::alias::{Alias, AliasError};
+use crate::config::{Config, ConfigError};
+use crate::fuzzy;
+```
 
 **Path Aliases:**
-- No path aliases configured (no `#[path = "..."]` usage)
-- Relative imports use `crate::module` format: `use crate::commands;`, `use crate::alias::Alias;`
-
-**Module Imports:**
-- Explicit item imports preferred: `use crate::alias::{Alias, AliasError};`
-- Star imports used rarely; only when importing multiple items from same module
+- None observed. Uses full crate paths: `crate::alias`, `crate::config`, `crate::database`
+- Module re-exports in `lib.rs` (lines 14-18) for public API: `pub use alias::Alias; pub use cli::{parse_args, Args, Command};`
 
 ## Error Handling
 
 **Patterns:**
-- Custom error enums with `#[derive(Error, Debug)]` and `thiserror::Error`
-- Examples: `AliasError`, `DatabaseError`, `ConfigError`
-- Error variants use descriptive enum types:
-  ```rust
-  #[error("invalid alias '{alias}': {reason}")]
-  InvalidAlias { alias: String, reason: String },
+- Custom error enums using `thiserror` for domain errors: `AliasError`, `DatabaseError`, `ConfigError` (see `src/alias.rs` lines 15-32)
+- `Result<T, Box<dyn std::error::Error>>` for operation functions (all command functions in `src/commands/`)
+- `Result<T, CustomError>` for module-internal operations (e.g., `Database::save()` returns `Result<(), DatabaseError>`)
+- Error conversion via `From` implementations provided by `#[from]` attributes on error enums
+- Commands that don't need config/database are handled early and returned (see `src/main.rs` lines 31-70)
 
-  #[error("alias '{0}' not found")]
-  NotFound(String),
-  ```
-- Main error handling uses `Result<T, Box<dyn std::error::Error>>` for command functions
-- Error conversion: `?` operator with automatic `From` implementations via `thiserror`
-- Error mapping in main: `handle_error()` function maps error strings to exit codes (1-5)
+Example error handling in `src/commands/register.rs` (lines 21-34):
+```rust
+validate_alias(name)?;
+let normalized_tags = validate_and_normalize_tags(tags)?;
+let expanded_path = expand_path(path)?;
+let path_str = expanded_path.to_string_lossy().to_string();
+
+if !expanded_path.exists() {
+    return Err(AliasError::DirectoryNotFound(path_str).into());
+}
+```
 
 **Exit Codes:**
-- Code 1: Not found, stack empty
-- Code 2: Directory missing
-- Code 3: Invalid input, invalid alias, invalid tag
-- Code 4: Already exists
-- Code 5: System error, IO error
-- Code 0: Success
+- Mapped in `src/main.rs` `handle_error()` function (lines 216-232):
+  - 1: Not found or stack empty
+  - 2: Directory missing
+  - 3: Invalid input (alias/tag)
+  - 4: Already exists
+  - 5: System/IO error
 
-**Error Messages:**
-- User-facing errors via `eprintln!()`: `eprintln!("{}", err);`
-- Success messages via `println!()`: `println!("Registered '{}'", name);`
-- No panic!() in main binary path; errors propagate as `Result`
+**Validation Pattern:**
+- Separate `validate_*()` functions that return `Result<(), AliasError>` (see `src/alias.rs` lines 35-70)
+- Uses lazy-initialized regex patterns with `LazyLock` (lines 9-13): `static VALID_ALIAS_PATTERN: LazyLock<Regex>`
+- Validation happens before state modification
 
 ## Logging
 
-**Framework:** `println!()` and `eprintln!()` macros (no dedicated logging framework)
+**Framework:** console (println!, eprintln!)
 
 **Patterns:**
-- Status messages to stdout: `println!("Registered '{}' -> {}", name, path);`
-- Errors to stderr: `eprintln!("{}", error_message);`
-- Update notifications to stderr: `eprintln!("Update available: {}", version);`
-- No structured logging; messages are human-readable strings
-- Navigation output to stdout: single path per line (consumed by shell wrapper)
+- User messages to stdout via `println!()`
+- Errors and diagnostic info to stderr via `eprintln!()`
+- Success feedback includes context: `println!("Registered '{}' -> {}", name, path_str);` (src/commands/register.rs line 60)
+- No logging framework (tracing/log) used; direct I/O only
 
 ## Comments
 
 **When to Comment:**
-- Sparse commenting; code is generally self-documenting through naming
-- Comments explain WHY, not WHAT: `// Auto-saves on Drop` in database.rs
-- No obvious TODO markers; only FIXME/XXX found in code review sections
-- Complex algorithms have explanatory comments: Levenshtein distance calculation in `src/fuzzy.rs`
+- Module-level doc comments with `//!` describing purpose (all source files have these)
+- Function doc comments with `///` for public APIs (see `src/database.rs` lines 55-58)
+- Inline comments rare; code is generally self-documenting
+- TODO/FIXME comments not found in codebase
 
 **JSDoc/TSDoc:**
-- Not applicable (Rust uses `///` doc comments, not JSDoc)
-- Doc comments limited to public module interfaces
-- Minimal ceremonial documentation; focus on essential behavior
+- Rust uses `///` for documentation comments above functions
+- Example from `src/alias.rs` (lines 94-95):
+```rust
+/// Create a new alias with the given name and path
+pub fn new(name: &str, path: &str) -> Result<Self, AliasError> {
+```
 
 ## Function Design
 
 **Size:**
-- Functions are typically 10-50 lines; largest are ~100 lines (migrate_from_text_format)
-- Small focused functions with single responsibility: `validate_alias()`, `levenshtein_distance()`, `similarity()`
+- Functions average 20-50 lines for domain logic
+- Command functions in `src/commands/` range 15-40 lines
+- Database methods stay focused on single operations (see `src/database.rs` add/remove/tag operations)
 
 **Parameters:**
-- Explicit over implicit: functions take references where applicable (`&Database`, `&str`)
-- Mutable references for stateful operations: `&mut Database`, `&mut Alias`
-- Parameters rarely exceed 4 arguments; complex data bundled into structs
+- Immutable by default: `&str`, `&Database`, `&[String]`
+- Mutable when needed: `&mut Database`, `&mut Alias`
+- Config passed as reference: `&Config`
+- Tag operations use `&[String]` to accept both Vec and arrays
 
 **Return Values:**
-- `Result<(), Box<dyn std::error::Error>>` for fallible operations
-- `Result<String, DatabaseError>` for typed errors
-- `Option<T>` for optional lookups: `db.get()` returns `Option<&Alias>`
-- Simple success patterns: `Ok(())` or `Err(...)`
+- `Result<(), Box<dyn std::error::Error>>` for command implementations
+- `Result<T, SpecificError>` for internal operations
+- `Option<T>` for lookups that might not exist: `db.get()` returns `Option<&Alias>`
+- Empty tuple `()` used for operations with side effects only
 
-**Example Pattern:**
+Example from `src/database.rs` (lines 170-185):
 ```rust
-pub fn register_with_tags(
-    db: &mut Database,
-    name: &str,
-    path: &str,
-    tags: &[String],
-) -> Result<(), Box<dyn std::error::Error>> {
-    validate_alias(name)?;
-    let normalized_tags = validate_and_normalize_tags(tags)?;
-    // ... operation ...
-    println!("Registered '{}'", name);
-    Ok(())
+pub fn get(&self, name: &str) -> Option<&Alias> {
+    self.aliases.get(name)
+}
+
+pub fn get_mut(&mut self, name: &str) -> Option<&mut Alias> {
+    self.dirty = true;
+    self.aliases.get_mut(name)
+}
+
+pub fn insert(&mut self, alias: Alias) {
+    self.dirty = true;
+    self.aliases.insert(alias.name.clone(), alias);
 }
 ```
 
 ## Module Design
 
 **Exports:**
-- Command modules export single public function: `pub fn register()`, `pub fn cleanup()`
-- Core modules export types and utility functions: `alias.rs` exports `Alias` struct, validation functions
-- Internal implementation details kept private
-- No re-exports in `mod.rs`; modules imported directly
+- Selective public re-exports in `lib.rs` for public API (see `src/lib.rs` lines 14-18)
+- Command modules do not use `pub use` - functions exported individually
+- Internal types (`DatabaseFile` in `src/database.rs` line 35) marked struct-level private by not being in public module
 
 **Barrel Files:**
-- `src/commands/mod.rs` exists but minimal; lists command modules
-- No star exports; explicit imports required
-- Example: import command with `use goto::commands::register;`
+- `src/commands/mod.rs` lists all command modules but doesn't re-export (lines would show `mod register;` not `pub use`)
+- Minimal re-export pattern; consumers use full paths: `commands::register::register()`
 
-**Module Organization:**
-- One module per concern: `alias.rs` (types), `database.rs` (persistence), `fuzzy.rs` (matching)
-- Test modules inline: `#[cfg(test)] mod tests { ... }`
-- Commands separated into `src/commands/` directory by operation type
+## Dirty Flag Pattern
 
-## Validation and Error Patterns
+**Optimization:**
+- `Database` uses a `dirty` flag to avoid unnecessary writes (see `src/database.rs` lines 149-167)
+- Flag set to `true` on all mutations: `get_mut()`, `insert()`, `remove()`, `add_tag()`
+- Flag checked in `save()` to skip I/O if no changes
+- Auto-saves on `Drop` via implementation of `Drop` trait (lines 366-370)
 
-**Input Validation:**
-- Regex-based validation in `alias.rs`: `VALID_ALIAS_PATTERN`, `VALID_TAG_PATTERN`
-- Validation functions return descriptive `Result<(), AliasError>`
-- Example: `validate_alias()` checks empty, pattern match, returns specific error variant
+**Initialization:**
+- When reading from database (line 176), `get_mut()` sets dirty=true, protecting against accidental state inconsistency
 
-**Type Safety:**
-- Enum-based command dispatch in `cli.rs` ensures exhaustiveness
-- Result types prevent silent failures; all errors propagate
+## Tag Normalization
 
-## Trait Implementations
-
-**Common Patterns:**
-- `Debug` derived for visibility in testing/error context
-- `Error` via `thiserror` macro for custom error types
-- `Drop` for auto-save behavior on database shutdown
-- `Serialize`/`Deserialize` for config and database persistence
-- No custom `Eq`, `Hash`, `Ord` implementations; derived when needed
+**Pattern** (see `src/commands/register.rs` lines 67-84):
+- Tags converted to lowercase
+- Duplicates removed via `HashSet`
+- Validated after normalization
+- Always sorted: `alias.tags.sort();` (line 132 in `src/alias.rs`)
 
 ---
 

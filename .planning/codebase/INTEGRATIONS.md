@@ -4,158 +4,119 @@
 
 ## APIs & External Services
 
-**GitHub Releases API:**
-- Service: GitHub releases API for self-update checking and downloading
-- What it's used for: Check for new versions, download updated binary, verify checksums
-- SDK/Client: `reqwest` blocking HTTP client (version 0.12)
-- Endpoint: `https://api.github.com/repos/anttilinno/goto/releases/latest`
-- Auth: User-Agent header with version (`goto/{version}`)
-- Timeout: 10 seconds per request
-- Location: `src/commands/update.rs` lines 110-141
-
-**GitHub Release Assets:**
-- Download URL: Dynamically obtained from release JSON
-- Checksum file: `checksums.txt` from release assets
-- Binary naming pattern: `goto-linux-amd64` (platform-specific)
-- Location: `src/commands/update.rs` lines 127-149
+**GitHub:**
+- GitHub Releases API - Used for checking and downloading updates
+  - Service: GitHub API
+  - What it's used for: Fetching latest release information and checksums
+  - SDK/Client: `reqwest` 0.12 (HTTP client with blocking and json features)
+  - Config: `GITHUB_API_URL = "https://api.github.com/repos/anttilinno/goto/releases/latest"` (in `src/commands/update.rs`)
+  - Features used:
+    - Get latest release tag and assets
+    - Download `checksums.txt` for verification
+    - Platform detection (currently supports Linux x86_64 only)
 
 ## Data Storage
 
-**Local File Storage:**
-
-**Aliases Database:**
-- Type: TOML format
-- Path: `~/.config/goto/aliases.toml` (or `$GOTO_DB/aliases.toml`)
-- Format: Array of Alias objects with fields: name, path, tags, use_count, last_used, created_at
-- Persistence: HashMap in-memory with dirty-flag optimization (writes only on changes)
-- Location: `src/database.rs` (Database struct)
-- Auto-migration: From legacy plaintext format to TOML on first load
-
-**Configuration:**
-- Type: TOML format
-- Path: `~/.config/goto/config.toml`
-- Contents: User settings for general, display, and update behavior
-- Location: `src/config.rs` (UserConfig, GeneralConfig, DisplayConfig, UpdateConfig structs)
-
-**Directory Stack:**
-- Type: Plaintext
-- Path: `~/.config/goto/goto_stack`
-- Format: One directory path per line
-- Location: `src/stack.rs`
-
-**Update Cache:**
-- Type: JSON format
-- Path: `~/.config/goto/update_cache.json`
-- Contents: Caching of latest version check results
-- Fields: last_check (DateTime), latest_version, download_url, checksum
-- Location: `src/commands/update.rs` lines 15-33
+**Databases:**
+- None - Pure local file-based storage
 
 **File Storage:**
+- Local filesystem only
+  - TOML format: `~/.config/goto/aliases.toml` - Alias database
+  - TOML format: `~/.config/goto/config.toml` - User configuration
+  - Text format: `~/.config/goto/goto_stack` - Directory stack (one path per line)
+  - JSON format: `~/.config/goto/update_cache.json` - Cached update check info
 
-No external file storage services (S3, etc.). All data stored locally in user's config directory.
+**Location configuration:**
+- Via environment variables (highest priority):
+  - `$GOTO_DB` - Override entire database directory
+  - `$XDG_CONFIG_HOME/goto` - XDG Base Directory spec
+  - Default: `~/.config/goto`
 
 **Caching:**
-
-- In-process HashMap caching for alias lookups (DatabaseError struct)
-- File-based caching for update checks with timestamp to avoid excessive GitHub API calls
-- Update check cache interval: 24 hours by default (configurable via `update.check_interval_hours`)
+- Update check cache only
+  - File: `update_cache.json`
+  - Contains: last_check timestamp, latest_version, download_url, checksum
+  - Cache TTL: Configurable via `[update] check_interval_hours` in config.toml (default 24 hours)
 
 ## Authentication & Identity
 
 **Auth Provider:**
-
-- None - No user authentication required
-- Command-line based access control (binary runs with user's shell permissions)
-
-**Shell Integration:**
-
-- Shell wrappers (`goto.bash`, `goto.zsh`, `goto.fish`) provide user-facing CLI
-- Shell wrappers detect and use fzf for interactive selection if available
-- No authentication tokens or API keys required for basic usage
+- None required
+- Public GitHub API used (no authentication credentials needed)
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-
-- None detected - No integration with Sentry, Datadog, or similar
+- None - Errors output to stderr with appropriate exit codes
 
 **Logs:**
+- Stdout for navigation commands (outputs directory path)
+- Stderr for non-navigation output (help, errors, stats, list)
+- File-based state: timestamps in alias metadata via `chrono` crate
 
-- No persistent logging framework
-- Output to stdout/stderr based on command type
-- Standard error messages via `eprintln!()` and command output via `println!()`
-- Exit codes map to error types:
-  - 0: Success
-  - 1: Alias not found
-  - 2: Directory missing/invalid
-  - 3: Invalid input
-  - 4: Alias already exists
-  - 5: System error
-  - Location: `src/main.rs` handle_error function
-
-**Update Check Notifications:**
-
-- Checks for new versions automatically on startup (if enabled)
-- Location: `src/commands/update.rs` lines 172-200 (run_update_check function)
-- Notifies user of availability when new version detected
+**Exit Codes:**
+- 0 - Success
+- 1 - Not found (alias or stack empty)
+- 2 - Directory missing (target doesn't exist)
+- 3 - Invalid input (alias/tag validation failed)
+- 4 - Already exists (alias already registered)
+- 5 - System error (I/O, config, network, etc.)
 
 ## CI/CD & Deployment
 
 **Hosting:**
-
-- GitHub (source code)
-- Self-hosted releases available on GitHub Releases
+- Not applicable (command-line tool)
+- Distributed via GitHub Releases
 
 **CI Pipeline:**
+- None detected in codebase
 
-- Not detected in codebase (no GitHub Actions, GitLab CI, etc. configuration files)
-
-**Release Process:**
-
-- Manual versioning and tagging via `mise run release [VERSION]`
-- Git-based: Creates commits and tags, pushes to GitHub
-- Location: `.mise.toml` lines 17-55 (release task)
-- Publishes binary and checksums to GitHub Releases
+**Release Management:**
+- Manual via `mise run release [VERSION]` task
+- Creates git tag and pushes to GitHub
+- Binary builds and releases managed external to codebase
 
 ## Environment Configuration
 
-**Required Environment Variables:**
+**Required env vars:**
+- None (all optional)
 
-- None strictly required - all have sensible defaults
+**Optional env vars:**
+- `GOTO_DB` - Custom database directory path
+- `XDG_CONFIG_HOME` - XDG Base Directory specification
+- `HOME` - Used by `dirs` crate for home directory detection
 
-**Optional Environment Variables:**
+**Secrets location:**
+- Not applicable - No secrets stored
+- All data is local user configuration files
 
-- `GOTO_DB` - Override default database path (default: `$XDG_CONFIG_HOME/goto` or `~/.config/goto`)
-- `XDG_CONFIG_HOME` - XDG Base Directory standard (default: `~/.config` if not set)
-- `HOME` - User home directory (standard system variable)
-- `SHELL` - Current shell path (detected for installation)
-- `GOTO_FZF_OPTS` - Custom options to pass to fzf during interactive selection
-  - Location: `shell/goto.bash` line 19
+## Path Expansion
 
-**Secrets Location:**
-
-- No secrets are managed by goto - it's a local utility
-- No API keys or credentials required
-- GitHub API is unauthenticated (public endpoint, rate-limited)
+**Shell Variable Expansion:**
+- `shellexpand` 3.1 crate in `src/config.rs::expand_path()`
+- Expands `$VAR` and `${VAR}` environment variables in alias paths
+- Handles tilde expansion (`~`) manually before using `shellexpand`
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-
-- None
+- None - CLI tool only
 
 **Outgoing:**
+- None - No external callbacks
 
-- None - No callbacks or webhooks to external services
+## Shell Integration
 
-## Integration Points Summary
+**Shell Wrappers:**
+- `shell/goto.bash` - Bash integration sourced in `.bashrc`
+- `shell/goto.zsh` - Zsh integration sourced in `.zshrc`
+- `shell/goto.fish` - Fish integration sourced in `.config/fish/config.fish`
 
-| Integration | Type | Required | Used For |
-|------------|------|----------|----------|
-| GitHub Releases API | External API | Optional | Update checking, binary distribution |
-| fzf | External CLI | Optional | Interactive alias selection |
-| XDG Base Directory | System standard | Optional | Config directory location |
-| Local filesystem | Local storage | Required | Alias database, config, stack |
+**Shell Integration Protocol:**
+- Binary outputs directory path to stdout
+- Shell wrapper captures output and executes `cd "$output"`
+- Non-navigation commands (list, stats, help) output directly to user via stderr
 
 ---
 

@@ -5,119 +5,97 @@
 ## Languages
 
 **Primary:**
-- Rust 2021 edition - All core application logic and binary compilation (`src/`)
-- Bash/Zsh/Fish - Shell wrappers for directory navigation (`shell/goto.bash`, `shell/goto.zsh`, `shell/goto.fish`)
+- Rust 2021 edition - Core binary application (`src/main.rs` and all modules)
+
+**Secondary:**
+- Bash - Shell wrapper for bash integration (`shell/goto.bash`)
+- Zsh - Shell wrapper for zsh integration (`shell/goto.zsh`)
+- Fish - Shell wrapper for fish integration (`shell/goto.fish`)
 
 ## Runtime
 
 **Environment:**
-- Linux, macOS, and Unix-like systems (via Rust's cross-platform standard library)
-
-**Binary Target:**
-- Native binary compilation with Rust toolchain
-- Output: `goto-bin` executable compiled to `target/release/goto-bin`
+- Rust compiled binary (`goto-bin`)
+- Target platform: Linux x86_64
+- Build system: Cargo (Rust package manager)
 
 **Package Manager:**
-- Cargo (Rust package manager)
-- Lockfile: `Cargo.lock` (version 4 format)
+- Cargo (Rust)
+- Lockfile: `Cargo.lock` (present)
 
 ## Frameworks
 
 **Core:**
-- Standard Rust library (std) - I/O, file operations, collections, environment variables
-- No web framework or application framework - standalone CLI utility
+- No external framework; pure Rust standard library + dependencies for specific functionality
 
 **CLI:**
-- Manual argument parsing (no clap or similar framework) - see `src/cli.rs` and `src/main.rs`
+- Manual argument parsing in `src/cli.rs` (no clap or similar CLI framework)
 
-**Testing:**
-- Integration tests: `tests/integration.rs`
-- Unit tests embedded in modules with `#[cfg(test)]`
-
-**Build/Dev:**
-- Cargo build system - defined in `Cargo.toml`
-- mise task runner - defined in `.mise.toml` for build, test, install, release tasks
+**Serialization:**
+- TOML - For persistent storage of aliases and configuration (`src/database.rs`)
+- JSON - For update cache serialization (`src/commands/update.rs`)
 
 ## Key Dependencies
 
 **Critical:**
+- `serde` 1.0 - Serialization/deserialization framework (used for TOML and JSON)
+- `toml` 0.8 - TOML parsing and serialization for aliases database
+- `chrono` 0.4 - Datetime handling for alias metadata (created_at, last_used)
 
-- **serde** 1.0 with derive feature - Serialization/deserialization framework for TOML and JSON
-- **toml** 0.8 - TOML file parsing and generation for aliases database (`aliases.toml`)
-- **serde_json** 1.0 - JSON serialization for update cache (`update_cache.json`)
+**HTTP & Updates:**
+- `reqwest` 0.12 - HTTP client for GitHub release checks (`src/commands/update.rs`)
+  - Features: blocking, json
+  - Used for: Checking latest version on GitHub API, downloading checksums
 
-**Data/Time:**
-
-- **chrono** 0.4.43 with serde feature - DateTime handling, timezone support, used in alias metadata (`created_at`, `last_used`) and update caching
-
-**System/Utilities:**
-
-- **dirs** 5.0.1 - Cross-platform directory resolution (XDG standards, home directory detection)
-- **regex** 1.10 - Pattern matching for alias name validation
-- **shellexpand** 3.1 - Shell variable expansion (tilde expansion, environment variable substitution)
-- **thiserror** 1.0 - Error type definition and Display implementations
-
-**HTTP/Networking:**
-
-- **reqwest** 0.12 with blocking and json features - HTTP client for GitHub API integration
-  - Uses hyper, rustls, and TLS dependencies for HTTPS
-  - Blocking mode used for synchronous requests in update check functionality
-
-**Development:**
-
-- **tempfile** 3.14 (dev-dependency) - Temporary file/directory creation for tests
+**Utilities:**
+- `dirs` 5.0 - Cross-platform home directory detection in `src/config.rs`
+- `regex` 1.10 - Pattern validation for alias and tag names in `src/alias.rs`
+- `shellexpand` 3.1 - Shell variable expansion ($VAR) in path expansion (`src/config.rs`)
+- `thiserror` 1.0 - Custom error type derivation (used throughout codebase)
+- `serde_json` 1.0 - JSON handling for update cache
 
 ## Configuration
 
 **Environment:**
+- Loaded via `src/config.rs` from priority:
+  1. `$GOTO_DB` environment variable
+  2. `$XDG_CONFIG_HOME/goto`
+  3. `~/.config/goto`
 
-Database path resolution (priority order) in `src/config.rs`:
-1. `$GOTO_DB` - Custom database path override
-2. `$XDG_CONFIG_HOME/goto` - XDG Base Directory specification
-3. `~/.config/goto` - Default fallback
-
-Config files stored in database directory:
-- `aliases.toml` - Alias storage (TOML format)
-- `config.toml` - User settings (TOML format)
-- `goto_stack` - Directory stack (plaintext, one path per line)
-- `update_cache.json` - Update check cache (JSON format)
-
-Shell-specific configuration:
-- Bash: Source line in `~/.bashrc` pointing to `~/.config/goto/goto.bash`
-- Zsh: Source line in `~/.zshrc` pointing to `~/.config/goto/goto.zsh`
-- Fish: Source line in `~/.config/fish/config.fish` pointing to `~/.config/goto/goto.fish`
-
-Shell environment:
-- `GOTO_FZF_OPTS` - Custom fzf options for fuzzy selector (optional, in `shell/goto.bash` line 19)
+**Key configs stored:**
+- `config.toml` - User settings (fuzzy threshold, default sort, display options, update preferences)
+- `aliases.toml` - Alias database (name, path, tags, use_count, last_used, created_at)
+- `goto_stack` - Directory stack file (one path per line)
 
 **Build:**
-
-- `Cargo.toml` - Package metadata, dependencies, binary target definition
-- `Cargo.lock` - Locked dependency versions
-- `.mise.toml` - Task definitions for build, test, clean, release, install
+- `Cargo.toml` - Package manifest
+- `.mise.toml` - Task automation (build, test, release, install)
 
 ## Platform Requirements
 
 **Development:**
-
-- Rust 1.56+ (edition 2021 minimum)
-- Cargo (comes with Rust)
-- mise (optional, for task automation)
-- BATS (shell testing framework, optional - see `.mise.toml` line 2)
+- Rust toolchain (latest)
+- `bats` (latest) - For integration tests in `tests/integration.rs`
+- `mise` - Task runner for build/test automation
 
 **Production:**
+- Linux x86_64 system with bash/zsh/fish shell available
+- `~/.config/goto/` directory for configuration storage
+- Write permissions to shell RC files (`.bashrc`, `.zshrc`, `.config/fish/config.fish`)
 
-- Linux, macOS, or other Unix-like system
-- Bash, Zsh, or Fish shell
-- fzf (optional - for interactive fuzzy selection when no arguments provided)
-  - Detected at runtime in shell wrappers (`shell/goto.bash` line 11, 31)
-  - Fallback to non-interactive list when unavailable
+## Build Process
 
-**Network Requirements:**
+**Commands:**
+```bash
+cargo build --release          # Build release binary to target/release/goto-bin
+cargo test                     # Run all tests
+mise run build                 # Build and copy to bin/goto-bin
+mise run install               # Install binary and shell integration
+```
 
-- Internet connection required for `goto --check-updates` command
-- Contacts GitHub API: `https://api.github.com/repos/anttilinno/goto/releases/latest`
-- Downloads release assets from GitHub when updating
+**Artifact:**
+- Release binary: `target/release/goto-bin`
+- Installed to: `$HOME/.local/bin/goto-bin` (or custom via install options)
 
 ---
 
