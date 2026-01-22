@@ -53,10 +53,17 @@ pub struct DisplayConfig {
 
     #[serde(default = "default_show_tags")]
     pub show_tags: bool,
+
+    #[serde(default = "default_table_style")]
+    pub table_style: String,
 }
 
 fn default_show_tags() -> bool {
     true
+}
+
+fn default_table_style() -> String {
+    "unicode".to_string()
 }
 
 impl Default for DisplayConfig {
@@ -64,6 +71,7 @@ impl Default for DisplayConfig {
         Self {
             show_stats: false,
             show_tags: true,
+            table_style: default_table_style(),
         }
     }
 }
@@ -171,6 +179,7 @@ default_sort = "alpha"  # alpha, usage, recent
 [display]
 show_stats = false
 show_tags = true
+table_style = "unicode"  # unicode, ascii, minimal
 
 [update]
 auto_check = true       # Check for updates automatically
@@ -190,7 +199,8 @@ check_interval_hours = 24
              default_sort = \"{}\"\n\n\
              [display]\n\
              show_stats = {}\n\
-             show_tags = {}\n\n\
+             show_tags = {}\n\
+             table_style = \"{}\"\n\n\
              [update]\n\
              auto_check = {}\n\
              check_interval_hours = {}\n",
@@ -199,6 +209,7 @@ check_interval_hours = 24
             self.user.general.default_sort,
             self.user.display.show_stats,
             self.user.display.show_tags,
+            self.user.display.table_style,
             self.user.update.auto_check,
             self.user.update.check_interval_hours,
         )
