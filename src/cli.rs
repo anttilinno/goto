@@ -315,6 +315,9 @@ Install options (use with --install):
   --skip-rc                       Don't modify shell rc file
   --dry-run                       Show what would be done without making changes
 
+Configuration (edit ~/.config/goto/config.toml):
+  table_style = "unicode"         Table border style (unicode/ascii/minimal)
+
 Tag rules:
   - Tags are case-insensitive (stored lowercase)
   - Tags must be alphanumeric with dash/underscore
