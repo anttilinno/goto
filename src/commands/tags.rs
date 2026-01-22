@@ -1,7 +1,9 @@
 //! Tag commands: tag, untag, list_tags
 
 use crate::alias::validate_tag;
+use crate::config::Config;
 use crate::database::Database;
+use crate::table::{create_table, TableStyle};
 
 /// Add a tag to an alias
 ///
@@ -42,7 +44,7 @@ pub fn untag(db: &mut Database, alias: &str, tag_name: &str) -> Result<(), Box<d
 }
 
 /// List all unique tags with their counts
-pub fn list_tags(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
+pub fn list_tags(db: &Database, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     let tag_counts = db.get_all_tags();
 
     if tag_counts.is_empty() {
@@ -54,12 +56,16 @@ pub fn list_tags(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
     let mut tags: Vec<_> = tag_counts.into_iter().collect();
     tags.sort_by(|a, b| a.0.cmp(&b.0));
 
-    println!("Tags:");
+    let style = TableStyle::from(config.user.display.table_style.as_str());
+    let mut table = create_table(style);
+    table.set_header(vec!["Tag", "Aliases"]);
+
     for (tag, count) in tags {
         let plural = if count == 1 { "alias" } else { "aliases" };
-        println!("  {:<12} ({} {})", tag, count, plural);
+        table.add_row(vec![tag, format!("{} {}", count, plural)]);
     }
 
+    println!("{}", table);
     Ok(())
 }
 
@@ -82,6 +88,7 @@ pub fn list_tags_raw(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use crate::alias::Alias;
+    use crate::config::Config;
     use tempfile::NamedTempFile;
 
     fn create_test_db() -> (Database, NamedTempFile) {
@@ -216,17 +223,19 @@ mod tests {
     #[test]
     fn test_list_tags() {
         let (mut db, _file) = create_test_db();
+        let config = Config::load().unwrap();
         tag(&mut db, "test", "work").unwrap();
         tag(&mut db, "test", "important").unwrap();
 
-        let result = list_tags(&db);
+        let result = list_tags(&db, &config);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_list_tags_empty() {
         let (db, _file) = create_test_db();
-        let result = list_tags(&db);
+        let config = Config::load().unwrap();
+        let result = list_tags(&db, &config);
         assert!(result.is_ok());
     }
 

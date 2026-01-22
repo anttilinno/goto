@@ -168,7 +168,7 @@ fn run() -> Result<(), u8> {
             commands::tags::untag(&mut db, &alias, &tag).map_err(handle_error)
         }
 
-        Command::ListTags => commands::tags::list_tags(&db).map_err(handle_error),
+        Command::ListTags => commands::tags::list_tags(&db, &config).map_err(handle_error),
 
         Command::Recent { count, navigate_to } => {
             if let Some(n) = navigate_to {
