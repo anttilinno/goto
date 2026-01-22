@@ -2,11 +2,13 @@
 
 use std::path::Path;
 
+use crate::config::Config;
 use crate::database::Database;
+use crate::table::{create_table, TableStyle};
 
 /// Remove aliases with invalid (non-existent) paths
 /// If dry_run is true, only lists invalid aliases without removing them
-pub fn cleanup(db: &mut Database, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub fn cleanup(db: &mut Database, config: &Config, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let invalid: Vec<String> = db
         .all()
         .filter(|a| !Path::new(&a.path).exists())
@@ -20,22 +22,34 @@ pub fn cleanup(db: &mut Database, dry_run: bool) -> Result<(), Box<dyn std::erro
 
     if dry_run {
         println!("Would remove {} aliases with invalid paths (dry-run):", invalid.len());
-        for name in &invalid {
-            if let Some(alias) = db.get(name) {
-                println!("  {} -> {} (path does not exist)", name, alias.path);
-            }
-        }
     } else {
         println!("Removing {} aliases with invalid paths:", invalid.len());
-        for name in &invalid {
-            if let Some(alias) = db.get(name) {
-                println!("  {} -> {} (path does not exist)", name, alias.path);
-            }
+    }
+
+    let style = TableStyle::from(config.user.display.table_style.as_str());
+    let mut table = create_table(style);
+    table.set_header(vec!["Name", "Path", "Status"]);
+
+    for name in &invalid {
+        if let Some(alias) = db.get(name) {
+            table.add_row(vec![
+                name.clone(),
+                alias.path.clone(),
+                "Path does not exist".to_string(),
+            ]);
+        }
+        if !dry_run {
             db.remove(name);
         }
+    }
+
+    println!("{}", table);
+
+    if !dry_run {
         db.save()?;
         println!("Cleanup complete.");
     }
+
     Ok(())
 }
 
@@ -43,6 +57,7 @@ pub fn cleanup(db: &mut Database, dry_run: bool) -> Result<(), Box<dyn std::erro
 mod tests {
     use super::*;
     use crate::alias::Alias;
+    use crate::config::Config;
     use tempfile::{NamedTempFile, TempDir};
 
     fn create_test_db() -> (Database, NamedTempFile) {
@@ -54,11 +69,12 @@ mod tests {
     #[test]
     fn test_cleanup_all_valid() {
         let (mut db, _file) = create_test_db();
+        let config = Config::load().unwrap();
         let temp_dir = TempDir::new().unwrap();
 
         db.insert(Alias::new("valid", temp_dir.path().to_str().unwrap()).unwrap());
 
-        let result = cleanup(&mut db, false);
+        let result = cleanup(&mut db, &config, false);
         assert!(result.is_ok());
         assert!(db.contains("valid"));
     }
@@ -66,12 +82,13 @@ mod tests {
     #[test]
     fn test_cleanup_removes_invalid() {
         let (mut db, _file) = create_test_db();
+        let config = Config::load().unwrap();
         let temp_dir = TempDir::new().unwrap();
 
         db.insert(Alias::new("valid", temp_dir.path().to_str().unwrap()).unwrap());
         db.insert(Alias::new("invalid", "/nonexistent/path/12345").unwrap());
 
-        let result = cleanup(&mut db, false);
+        let result = cleanup(&mut db, &config, false);
         assert!(result.is_ok());
         assert!(db.contains("valid"));
         assert!(!db.contains("invalid"));
@@ -80,12 +97,13 @@ mod tests {
     #[test]
     fn test_cleanup_dry_run_preserves_invalid() {
         let (mut db, _file) = create_test_db();
+        let config = Config::load().unwrap();
         let temp_dir = TempDir::new().unwrap();
 
         db.insert(Alias::new("valid", temp_dir.path().to_str().unwrap()).unwrap());
         db.insert(Alias::new("invalid", "/nonexistent/path/12345").unwrap());
 
-        let result = cleanup(&mut db, true);
+        let result = cleanup(&mut db, &config, true);
         assert!(result.is_ok());
         // Both should still exist after dry-run
         assert!(db.contains("valid"));
@@ -95,7 +113,8 @@ mod tests {
     #[test]
     fn test_cleanup_empty() {
         let (mut db, _file) = create_test_db();
-        let result = cleanup(&mut db, false);
+        let config = Config::load().unwrap();
+        let result = cleanup(&mut db, &config, false);
         assert!(result.is_ok());
     }
 }

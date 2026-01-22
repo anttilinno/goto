@@ -133,7 +133,7 @@ fn run() -> Result<(), u8> {
 
         Command::ListTagsRaw => commands::tags::list_tags_raw(&db).map_err(handle_error),
 
-        Command::Stats => commands::stats::stats(&db).map_err(handle_error),
+        Command::Stats => commands::stats::stats(&db, &config).map_err(handle_error),
 
         Command::Register { name, path, tags } => {
             commands::register::register_with_tags(&mut db, &name, &path, &tags)
@@ -147,7 +147,7 @@ fn run() -> Result<(), u8> {
         Command::Expand { alias } => commands::navigate::expand(&db, &alias).map_err(handle_error),
 
         Command::Cleanup { dry_run } => {
-            commands::cleanup::cleanup(&mut db, dry_run).map_err(handle_error)
+            commands::cleanup::cleanup(&mut db, &config, dry_run).map_err(handle_error)
         }
 
         Command::Push { alias } => {
@@ -174,7 +174,7 @@ fn run() -> Result<(), u8> {
             if let Some(n) = navigate_to {
                 commands::stats::navigate_to_recent(&mut db, n).map_err(handle_error)
             } else {
-                commands::stats::show_recent(&db, count.unwrap_or(10)).map_err(handle_error)
+                commands::stats::show_recent(&db, &config, count.unwrap_or(10)).map_err(handle_error)
             }
         }
 

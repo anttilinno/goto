@@ -2,7 +2,9 @@
 
 use chrono::{DateTime, Utc};
 
+use crate::config::Config;
 use crate::database::Database;
+use crate::table::{TableStyle, create_table};
 
 /// Recent entry for display
 pub struct RecentEntry {
@@ -12,7 +14,7 @@ pub struct RecentEntry {
 }
 
 /// Show usage statistics
-pub fn stats(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
+pub fn stats(db: &Database, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     if db.is_empty() {
         println!("No aliases registered");
         return Ok(());
@@ -26,29 +28,33 @@ pub fn stats(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
     let total_navigations: u64 = entries.iter().map(|e| e.use_count).sum();
 
     println!("Usage Statistics");
-    println!("================");
-    println!("Most Used:");
+    println!();
 
-    // Show top aliases (up to 10)
-    let limit = entries.len().min(10);
-    let mut shown = 0;
-    for (i, entry) in entries.iter().take(limit).enumerate() {
-        if entry.use_count == 0 {
-            break;
+    // Filter to only used entries and take top 10
+    let used_entries: Vec<_> = entries
+        .iter()
+        .filter(|e| e.use_count > 0)
+        .take(10)
+        .collect();
+
+    if used_entries.is_empty() {
+        println!("(no aliases have been used yet)");
+    } else {
+        let style = TableStyle::from(config.user.display.table_style.as_str());
+        let mut table = create_table(style);
+        table.set_header(vec!["#", "Name", "Uses", "Last Used"]);
+
+        for (i, entry) in used_entries.iter().enumerate() {
+            let last_used_str = format_time_ago(entry.last_used);
+            table.add_row(vec![
+                (i + 1).to_string(),
+                entry.name.clone(),
+                entry.use_count.to_string(),
+                last_used_str,
+            ]);
         }
-        let last_used_str = format_time_ago(entry.last_used);
-        println!(
-            "  {}. {:<12} ({} uses, last: {})",
-            i + 1,
-            entry.name,
-            entry.use_count,
-            last_used_str
-        );
-        shown += 1;
-    }
 
-    if shown == 0 {
-        println!("  (no aliases have been used yet)");
+        println!("{table}");
     }
 
     println!();
@@ -86,7 +92,7 @@ pub fn recent(db: &Database, limit: Option<usize>) -> Result<Vec<RecentEntry>, B
 }
 
 /// Display recently visited aliases
-pub fn show_recent(db: &Database, limit: usize) -> Result<(), Box<dyn std::error::Error>> {
+pub fn show_recent(db: &Database, config: &Config, limit: usize) -> Result<(), Box<dyn std::error::Error>> {
     let limit = if limit == 0 { 10 } else { limit };
     let entries = recent(db, Some(limit))?;
 
@@ -95,17 +101,21 @@ pub fn show_recent(db: &Database, limit: usize) -> Result<(), Box<dyn std::error
         return Ok(());
     }
 
-    println!("Recently Visited:");
+    let style = TableStyle::from(config.user.display.table_style.as_str());
+    let mut table = create_table(style);
+    table.set_header(vec!["#", "Name", "Path", "Last Visited"]);
+
     for (i, entry) in entries.iter().enumerate() {
         let time_ago = format_time_ago(Some(entry.last_used));
-        println!(
-            "  {}.    {:<12}    {}    ({})",
-            i + 1,
-            entry.alias,
-            entry.path,
-            time_ago
-        );
+        table.add_row(vec![
+            (i + 1).to_string(),
+            entry.alias.clone(),
+            entry.path.clone(),
+            time_ago,
+        ]);
     }
+
+    println!("{table}");
 
     Ok(())
 }
@@ -200,6 +210,7 @@ fn format_time_ago(t: Option<DateTime<Utc>>) -> String {
 mod tests {
     use super::*;
     use crate::alias::Alias;
+    use crate::config::Config;
     use chrono::Duration;
     use tempfile::NamedTempFile;
 
@@ -227,7 +238,8 @@ mod tests {
     #[test]
     fn test_stats() {
         let (db, _file) = create_test_db();
-        let result = stats(&db);
+        let config = Config::load().unwrap();
+        let result = stats(&db, &config);
         assert!(result.is_ok());
     }
 
@@ -235,7 +247,8 @@ mod tests {
     fn test_stats_empty() {
         let file = NamedTempFile::new().unwrap();
         let db = Database::load_from_path(file.path()).unwrap();
-        let result = stats(&db);
+        let config = Config::load().unwrap();
+        let result = stats(&db, &config);
         assert!(result.is_ok());
     }
 
@@ -287,7 +300,8 @@ mod tests {
     #[test]
     fn test_show_recent() {
         let (db, _file) = create_test_db();
-        let result = show_recent(&db, 5);
+        let config = Config::load().unwrap();
+        let result = show_recent(&db, &config, 5);
         assert!(result.is_ok());
     }
 
@@ -295,7 +309,8 @@ mod tests {
     fn test_show_recent_empty() {
         let file = NamedTempFile::new().unwrap();
         let db = Database::load_from_path(file.path()).unwrap();
-        let result = show_recent(&db, 5);
+        let config = Config::load().unwrap();
+        let result = show_recent(&db, &config, 5);
         assert!(result.is_ok());
     }
 
