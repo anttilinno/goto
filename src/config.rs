@@ -579,4 +579,60 @@ show_tags = false
             },
         );
     }
+
+    #[test]
+    fn test_parse_config_with_table_style() {
+        let toml_str = r#"
+[display]
+table_style = "ascii"
+"#;
+        let config: UserConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.display.table_style, "ascii");
+    }
+
+    #[test]
+    fn test_parse_config_missing_table_style_uses_default() {
+        // Config without table_style should default to "unicode"
+        let toml_str = r#"
+[display]
+show_stats = true
+"#;
+        let config: UserConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.display.table_style, "unicode");
+    }
+
+    #[test]
+    fn test_default_config_file_contains_table_style() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let config = Config {
+            database_path: temp_dir.path().to_path_buf(),
+            stack_path: temp_dir.path().join("goto_stack"),
+            config_path: config_path.clone(),
+            aliases_path: temp_dir.path().join("aliases.toml"),
+            user: UserConfig::default(),
+        };
+
+        config.create_default_config_file().unwrap();
+
+        let content = fs::read_to_string(&config_path).unwrap();
+        assert!(content.contains("table_style"));
+        assert!(content.contains("unicode"));
+    }
+
+    #[test]
+    fn test_format_config_includes_table_style() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            database_path: temp_dir.path().to_path_buf(),
+            stack_path: temp_dir.path().join("goto_stack"),
+            config_path: temp_dir.path().join("config.toml"),
+            aliases_path: temp_dir.path().join("aliases.toml"),
+            user: UserConfig::default(),
+        };
+        let formatted = config.format_config();
+        assert!(formatted.contains("table_style"));
+        assert!(formatted.contains("unicode"));
+    }
 }

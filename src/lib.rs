@@ -10,9 +10,11 @@ pub mod config;
 pub mod database;
 pub mod fuzzy;
 pub mod stack;
+pub mod table;
 
 pub use alias::Alias;
 pub use cli::{parse_args, Args, Command};
 pub use config::Config;
 pub use database::Database;
 pub use stack::Stack;
+pub use table::{TableStyle, create_table};
