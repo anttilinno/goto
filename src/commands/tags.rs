@@ -9,7 +9,13 @@ use crate::table::{create_table, TableStyle};
 ///
 /// Validates and normalizes the tag to lowercase before adding.
 /// This operation is idempotent - adding an existing tag is a no-op.
-pub fn tag(db: &mut Database, alias: &str, tag_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+///
+/// # Arguments
+/// * `db` - The alias database
+/// * `alias` - The alias to tag
+/// * `tag_name` - The tag to add
+/// * `_force` - If true, skip confirmation for new tags (used in future plan)
+pub fn tag(db: &mut Database, alias: &str, tag_name: &str, _force: bool) -> Result<(), Box<dyn std::error::Error>> {
     // Normalize and validate the tag
     let tag_name = tag_name.trim().to_lowercase();
     validate_tag(&tag_name)?;
@@ -111,7 +117,7 @@ mod tests {
     fn test_tag() {
         let (mut db, _file) = create_test_db();
 
-        let result = tag(&mut db, "test", "work");
+        let result = tag(&mut db, "test", "work", false);
         assert!(result.is_ok());
 
         let alias = db.get("test").unwrap();
@@ -122,7 +128,7 @@ mod tests {
     fn test_tag_normalizes_to_lowercase() {
         let (mut db, _file) = create_test_db();
 
-        let result = tag(&mut db, "test", "WORK");
+        let result = tag(&mut db, "test", "WORK", false);
         assert!(result.is_ok());
 
         let alias = db.get("test").unwrap();
@@ -134,7 +140,7 @@ mod tests {
     fn test_tag_trims_whitespace() {
         let (mut db, _file) = create_test_db();
 
-        let result = tag(&mut db, "test", "  work  ");
+        let result = tag(&mut db, "test", "  work  ", false);
         assert!(result.is_ok());
 
         let alias = db.get("test").unwrap();
@@ -146,15 +152,15 @@ mod tests {
         let (mut db, _file) = create_test_db();
 
         // Empty tag should fail
-        let result = tag(&mut db, "test", "");
+        let result = tag(&mut db, "test", "", false);
         assert!(result.is_err());
 
         // Invalid characters should fail
-        let result = tag(&mut db, "test", "work@home");
+        let result = tag(&mut db, "test", "work@home", false);
         assert!(result.is_err());
 
         // Starting with hyphen should fail
-        let result = tag(&mut db, "test", "-work");
+        let result = tag(&mut db, "test", "-work", false);
         assert!(result.is_err());
     }
 
@@ -163,8 +169,8 @@ mod tests {
         let (mut db, _file) = create_test_db();
 
         // Add tag twice
-        tag(&mut db, "test", "work").unwrap();
-        let result = tag(&mut db, "test", "work");
+        tag(&mut db, "test", "work", false).unwrap();
+        let result = tag(&mut db, "test", "work", false);
         assert!(result.is_ok());
 
         // Tag should still only appear once
@@ -175,14 +181,14 @@ mod tests {
     #[test]
     fn test_tag_not_found() {
         let (mut db, _file) = create_test_db();
-        let result = tag(&mut db, "nonexistent", "work");
+        let result = tag(&mut db, "nonexistent", "work", false);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_untag() {
         let (mut db, _file) = create_test_db();
-        tag(&mut db, "test", "work").unwrap();
+        tag(&mut db, "test", "work", false).unwrap();
 
         let result = untag(&mut db, "test", "work");
         assert!(result.is_ok());
@@ -194,7 +200,7 @@ mod tests {
     #[test]
     fn test_untag_normalizes_to_lowercase() {
         let (mut db, _file) = create_test_db();
-        tag(&mut db, "test", "work").unwrap();
+        tag(&mut db, "test", "work", false).unwrap();
 
         // Should remove "work" even when passed as "WORK"
         let result = untag(&mut db, "test", "WORK");
@@ -224,8 +230,8 @@ mod tests {
     fn test_list_tags() {
         let (mut db, _file) = create_test_db();
         let config = Config::load().unwrap();
-        tag(&mut db, "test", "work").unwrap();
-        tag(&mut db, "test", "important").unwrap();
+        tag(&mut db, "test", "work", false).unwrap();
+        tag(&mut db, "test", "important", false).unwrap();
 
         let result = list_tags(&db, &config);
         assert!(result.is_ok());
@@ -244,11 +250,11 @@ mod tests {
         let (mut db, _file) = create_test_db_with_multiple_aliases();
 
         // Add "work" tag to two aliases
-        tag(&mut db, "proj1", "work").unwrap();
-        tag(&mut db, "proj2", "work").unwrap();
+        tag(&mut db, "proj1", "work", false).unwrap();
+        tag(&mut db, "proj2", "work", false).unwrap();
 
         // Add "docs" tag to one alias
-        tag(&mut db, "docs", "docs").unwrap();
+        tag(&mut db, "docs", "docs", false).unwrap();
 
         let tag_counts = db.get_all_tags();
         assert_eq!(tag_counts.get("work"), Some(&2));
@@ -258,8 +264,8 @@ mod tests {
     #[test]
     fn test_list_tags_raw() {
         let (mut db, _file) = create_test_db();
-        tag(&mut db, "test", "work").unwrap();
-        tag(&mut db, "test", "important").unwrap();
+        tag(&mut db, "test", "work", false).unwrap();
+        tag(&mut db, "test", "important", false).unwrap();
 
         let result = list_tags_raw(&db);
         assert!(result.is_ok());

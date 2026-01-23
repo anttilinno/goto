@@ -8,15 +8,23 @@ use crate::database::Database;
 
 /// Register a new alias for a directory
 pub fn register(db: &mut Database, name: &str, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    register_with_tags(db, name, path, &[])
+    register_with_tags(db, name, path, &[], false)
 }
 
 /// Register a new alias with optional tags
+///
+/// # Arguments
+/// * `db` - The alias database
+/// * `name` - The alias name
+/// * `path` - The directory path
+/// * `tags` - Tags to add to the alias
+/// * `_force` - If true, skip confirmation for new tags (used in future plan)
 pub fn register_with_tags(
     db: &mut Database,
     name: &str,
     path: &str,
     tags: &[String],
+    _force: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Validate alias name
     validate_alias(name)?;
@@ -172,7 +180,7 @@ mod tests {
         let path = temp_dir.path().to_string_lossy().to_string();
 
         let tags = vec!["Work".to_string(), "important".to_string()];
-        let result = register_with_tags(&mut db, "test", &path, &tags);
+        let result = register_with_tags(&mut db, "test", &path, &tags, false);
         assert!(result.is_ok());
 
         let alias = db.get("test").unwrap();
@@ -189,7 +197,7 @@ mod tests {
 
         // Invalid tag starting with dash
         let tags = vec!["-invalid".to_string()];
-        let result = register_with_tags(&mut db, "test", &path, &tags);
+        let result = register_with_tags(&mut db, "test", &path, &tags, false);
         assert!(result.is_err());
     }
 
@@ -201,7 +209,7 @@ mod tests {
 
         // Same tag with different cases should be deduplicated
         let tags = vec!["Work".to_string(), "WORK".to_string(), "work".to_string()];
-        let result = register_with_tags(&mut db, "test", &path, &tags);
+        let result = register_with_tags(&mut db, "test", &path, &tags, false);
         assert!(result.is_ok());
 
         let alias = db.get("test").unwrap();
@@ -216,7 +224,7 @@ mod tests {
         let path = temp_dir.path().to_string_lossy().to_string();
 
         let tags = vec!["work".to_string(), "".to_string(), "  ".to_string()];
-        let result = register_with_tags(&mut db, "test", &path, &tags);
+        let result = register_with_tags(&mut db, "test", &path, &tags, false);
         assert!(result.is_ok());
 
         let alias = db.get("test").unwrap();

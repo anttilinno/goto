@@ -135,8 +135,8 @@ fn run() -> Result<(), u8> {
 
         Command::Stats => commands::stats::stats(&db, &config).map_err(handle_error),
 
-        Command::Register { name, path, tags, .. } => {
-            commands::register::register_with_tags(&mut db, &name, &path, &tags)
+        Command::Register { name, path, tags, force } => {
+            commands::register::register_with_tags(&mut db, &name, &path, &tags, force)
                 .map_err(handle_error)
         }
 
@@ -160,8 +160,8 @@ fn run() -> Result<(), u8> {
             commands::register::rename(&mut db, &old_name, &new_name).map_err(handle_error)
         }
 
-        Command::Tag { alias, tag, .. } => {
-            commands::tags::tag(&mut db, &alias, &tag).map_err(handle_error)
+        Command::Tag { alias, tag, force } => {
+            commands::tags::tag(&mut db, &alias, &tag, force).map_err(handle_error)
         }
 
         Command::Untag { alias, tag } => {
@@ -225,6 +225,8 @@ fn handle_error(err: Box<dyn std::error::Error>) -> u8 {
     } else if err_str.contains("already exists") {
         4
     } else if err_str.contains("not found") || err_str.contains("stack is empty") {
+        1
+    } else if err_str.contains("cancelled") || err_str.contains("aborted") {
         1
     } else {
         5
