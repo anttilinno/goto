@@ -285,7 +285,7 @@ pub fn print_help() {
 Usage:
   goto <alias>                    Navigate to the directory
   goto -r <alias> <directory>     Register a new alias
-  goto -r <alias> <dir> --tags=   Register with tags
+  goto -r <alias> <dir> -t tags   Register with tags (comma-separated)
   goto -r <alias> <dir> --force   Skip confirmation for new tags
   goto -u <alias>                 Unregister an alias
   goto -l                         List all aliases
@@ -300,13 +300,13 @@ Usage:
   goto --tag <alias> <tag>        Add tag to alias
   goto --tag <alias> <tag> -f     Add tag without confirmation
   goto --untag <alias> <tag>      Remove tag from alias
-  goto --tags                     List all tags with counts
-  goto --stats                    Show usage statistics
-  goto --recent                   List recently visited directories
-  goto --recent <N>               Navigate to Nth most recent
+  goto -T / --tags                List all tags with counts
+  goto -s / --stats               Show usage statistics
+  goto -R / --recent              List recently visited directories
+  goto -R <N> / --recent <N>      Navigate to Nth most recent
   goto --recent-clear             Clear recent history
-  goto --export                   Export aliases to TOML (stdout)
-  goto --import <file>            Import aliases from TOML file
+  goto -e / --export              Export aliases to TOML (stdout)
+  goto -i / --import <file>       Import aliases from TOML file
   goto --config                   Show current configuration
   goto --install                  Install shell integration
   goto -U / --update              Update goto to latest version
@@ -322,7 +322,7 @@ Sort options (use with -l/--list):
 Filter options (use with -l/--list):
   --filter=<tag>                  Show only aliases with tag
 
-Import strategies (use with --import):
+Import strategies (use with -i/--import):
   --strategy=skip                 Skip existing aliases (default)
   --strategy=overwrite            Overwrite existing aliases
   --strategy=rename               Rename conflicting aliases (add suffix)
@@ -342,20 +342,20 @@ Tag rules:
 
 Examples:
   goto -r dev ~/Development       Register 'dev' alias
-  goto -r proj ~/code --tags=work,go  Register with tags
+  goto -r proj ~/code -t work,go  Register with tags
   goto dev                        Navigate to ~/Development
   goto -l --sort=usage            List aliases by usage
   goto -l --filter=work           List aliases tagged 'work'
   goto --tag dev golang           Add 'golang' tag to 'dev'
   goto --untag dev golang         Remove 'golang' tag from 'dev'
-  goto --tags                     List all tags with counts
-  goto --stats                    Show usage statistics
-  goto --recent                   Show recently visited aliases
-  goto --recent 3                 Navigate to 3rd most recent
+  goto -T                         List all tags with counts
+  goto -s                         Show usage statistics
+  goto -R                         Show recently visited aliases
+  goto -R 3                       Navigate to 3rd most recent
   goto -p work                    Save location, go to 'work'
   goto -o                         Return to saved location
-  goto --export > backup.toml     Backup aliases to file
-  goto --import backup.toml       Restore aliases from backup
+  goto -e > backup.toml           Backup aliases to file
+  goto -i backup.toml             Restore aliases from backup
 "#
     );
 }
