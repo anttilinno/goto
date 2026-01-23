@@ -107,6 +107,135 @@ pub fn list_tags_raw(db: &Database) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Rename or merge a tag across all aliases
+///
+/// If target tag doesn't exist: simple rename
+/// If target tag exists: merge (aliases with old tag gain new tag, old tag removed)
+///
+/// # Arguments
+/// * `db` - The alias database
+/// * `config` - Config for table styling
+/// * `old_tag` - The tag to rename/remove
+/// * `new_tag` - The target tag name
+/// * `dry_run` - If true, only preview changes without modifying
+/// * `force` - If true, skip confirmation prompt
+pub fn rename_tag(
+    db: &mut Database,
+    config: &Config,
+    old_tag: &str,
+    new_tag: &str,
+    dry_run: bool,
+    force: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Normalize both tags
+    let old_tag = old_tag.trim().to_lowercase();
+    let new_tag = new_tag.trim().to_lowercase();
+
+    // Validate new tag
+    validate_tag(&new_tag)?;
+
+    // Check if old_tag exists
+    let all_tags = db.get_all_tags();
+    if !all_tags.contains_key(&old_tag) {
+        return Err(format!("tag '{}' not found", old_tag).into());
+    }
+
+    // Find affected aliases
+    let affected: Vec<String> = db
+        .all()
+        .filter(|a| a.has_tag(&old_tag))
+        .map(|a| a.name.clone())
+        .collect();
+
+    if affected.is_empty() {
+        println!("No aliases with tag '{}'", old_tag);
+        return Ok(());
+    }
+
+    // Determine if this is a merge (new_tag already exists)
+    let is_merge = all_tags.contains_key(&new_tag);
+    let operation = if is_merge { "merge" } else { "rename" };
+
+    // Confirmation prompt (unless force or dry_run)
+    if !force && !dry_run {
+        let message = format!(
+            "Will {} tag '{}' to '{}' affecting {} alias{}",
+            operation,
+            old_tag,
+            new_tag,
+            affected.len(),
+            if affected.len() == 1 { "" } else { "es" }
+        );
+        if !confirm(&message, false)? {
+            return Err("Tag rename cancelled".into());
+        }
+    }
+
+    // Dry run: display preview table
+    if dry_run {
+        println!(
+            "Would {} tag '{}' to '{}' affecting {} alias{} (dry-run):",
+            operation,
+            old_tag,
+            new_tag,
+            affected.len(),
+            if affected.len() == 1 { "" } else { "es" }
+        );
+
+        let style = TableStyle::from(config.user.display.table_style.as_str());
+        let mut table = create_table(style);
+        table.set_header(vec!["Name", "Current Tags", "After"]);
+
+        for name in &affected {
+            if let Some(alias) = db.get(name) {
+                let current_tags = alias.tags.join(", ");
+
+                // Compute "after" tags: remove old, add new if not present
+                let mut after_tags: Vec<String> = alias
+                    .tags
+                    .iter()
+                    .filter(|t| *t != &old_tag)
+                    .cloned()
+                    .collect();
+                if !after_tags.contains(&new_tag) {
+                    after_tags.push(new_tag.clone());
+                }
+                after_tags.sort();
+                let after = after_tags.join(", ");
+
+                table.add_row(vec![name.clone(), current_tags, after]);
+            }
+        }
+
+        println!("{}", table);
+        return Ok(());
+    }
+
+    // Apply changes atomically
+    for name in &affected {
+        if let Some(alias) = db.get_mut(name) {
+            alias.remove_tag(&old_tag);
+            if !alias.has_tag(&new_tag) {
+                alias.add_tag(&new_tag);
+            }
+        }
+    }
+
+    // Single save at end
+    db.save()?;
+
+    println!(
+        "{}d tag '{}' to '{}' on {} alias{}",
+        if is_merge { "Merge" } else { "Rename" },
+        old_tag,
+        new_tag,
+        affected.len(),
+        if affected.len() == 1 { "" } else { "es" }
+    );
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,5 +489,116 @@ mod tests {
 
         let alias = db.get("proj2").unwrap();
         assert!(alias.has_tag("work"));
+    }
+
+    // Tests for rename_tag function
+
+    #[test]
+    fn test_rename_tag_basic() {
+        let (mut db, _file) = create_test_db_with_multiple_aliases();
+        let config = Config::load().unwrap();
+
+        // Add "work" tag to proj1 and proj2
+        tag(&mut db, "proj1", "work", true).unwrap();
+        tag(&mut db, "proj2", "work", true).unwrap();
+
+        // Rename "work" to "job" with force (target doesn't exist)
+        let result = rename_tag(&mut db, &config, "work", "job", false, true);
+        assert!(result.is_ok());
+
+        // Verify: "work" tag gone, "job" tag exists
+        assert!(!db.get_all_tags().contains_key("work"));
+        assert!(db.get_all_tags().contains_key("job"));
+        assert!(db.get("proj1").unwrap().has_tag("job"));
+        assert!(db.get("proj2").unwrap().has_tag("job"));
+    }
+
+    #[test]
+    fn test_rename_tag_merge() {
+        let (mut db, _file) = create_test_db_with_multiple_aliases();
+        let config = Config::load().unwrap();
+
+        // Add "work" to proj1, "job" to proj2, and "job" to docs
+        tag(&mut db, "proj1", "work", true).unwrap();
+        tag(&mut db, "proj2", "job", true).unwrap();
+        tag(&mut db, "docs", "job", true).unwrap();
+
+        // Also add "job" to proj1 (so we can verify no duplicate)
+        tag(&mut db, "proj1", "job", true).unwrap();
+
+        // Rename/merge "work" into "job"
+        let result = rename_tag(&mut db, &config, "work", "job", false, true);
+        assert!(result.is_ok());
+
+        // Verify: "work" tag gone
+        assert!(!db.get_all_tags().contains_key("work"));
+
+        // proj1 should have "job" only once
+        let proj1 = db.get("proj1").unwrap();
+        assert!(proj1.has_tag("job"));
+        assert_eq!(proj1.tags.iter().filter(|t| *t == "job").count(), 1);
+    }
+
+    #[test]
+    fn test_rename_tag_source_not_found() {
+        let (mut db, _file) = create_test_db();
+        let config = Config::load().unwrap();
+
+        let result = rename_tag(&mut db, &config, "nonexistent", "newtag", false, true);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_rename_tag_normalizes_case() {
+        let (mut db, _file) = create_test_db();
+        let config = Config::load().unwrap();
+
+        // Add "work" tag
+        tag(&mut db, "test", "work", true).unwrap();
+
+        // Rename "WORK" to "JOB" - should normalize to lowercase
+        let result = rename_tag(&mut db, &config, "WORK", "JOB", false, true);
+        assert!(result.is_ok());
+
+        // Verify lowercase "job" exists
+        assert!(db.get_all_tags().contains_key("job"));
+        assert!(db.get("test").unwrap().has_tag("job"));
+    }
+
+    #[test]
+    fn test_rename_tag_force_bypasses_confirm() {
+        let (mut db, _file) = create_test_db();
+        let config = Config::load().unwrap();
+
+        // Add tag
+        tag(&mut db, "test", "work", true).unwrap();
+
+        // Without force, should fail in non-interactive (confirm returns false)
+        let result = rename_tag(&mut db, &config, "work", "job", false, false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cancelled"));
+
+        // With force, should succeed
+        let result = rename_tag(&mut db, &config, "work", "job", false, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_rename_tag_dry_run_no_changes() {
+        let (mut db, _file) = create_test_db();
+        let config = Config::load().unwrap();
+
+        // Add tag
+        tag(&mut db, "test", "work", true).unwrap();
+
+        // Dry run should not make changes
+        let result = rename_tag(&mut db, &config, "work", "job", true, false);
+        assert!(result.is_ok());
+
+        // Verify original tag still exists
+        assert!(db.get_all_tags().contains_key("work"));
+        assert!(!db.get_all_tags().contains_key("job"));
+        assert!(db.get("test").unwrap().has_tag("work"));
     }
 }
