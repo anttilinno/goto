@@ -56,6 +56,12 @@ pub enum Command {
         alias: String,
         tag: String,
     },
+    RenameTag {
+        old_tag: String,
+        new_tag: String,
+        dry_run: bool,
+        force: bool,
+    },
     ListTags,
     ListTagsRaw,
     Stats,
@@ -187,6 +193,20 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             }
         }
 
+        "--rename-tag" => {
+            if args.len() < 4 {
+                return Err("Usage: goto --rename-tag <old-tag> <new-tag> [--dry-run] [--force]".to_string());
+            }
+            let dry_run = args.iter().any(|a| a == "--dry-run");
+            let force = args.iter().any(|a| a == "--force" || a == "-f");
+            Command::RenameTag {
+                old_tag: args[2].clone(),
+                new_tag: args[3].clone(),
+                dry_run,
+                force,
+            }
+        }
+
         "-T" | "--tags" => Command::ListTags,
 
         "-R" | "--recent" => {
@@ -300,6 +320,9 @@ Usage:
   goto --tag <alias> <tag>        Add tag to alias
   goto --tag <alias> <tag> -f     Add tag without confirmation
   goto --untag <alias> <tag>      Remove tag from alias
+  goto --rename-tag <old> <new>   Rename tag across all aliases
+  goto --rename-tag old new -f    Rename without confirmation
+  goto --rename-tag old new --dry-run  Preview changes only
   goto -T / --tags                List all tags with counts
   goto -s / --stats               Show usage statistics
   goto -R / --recent              List recently visited directories
@@ -1042,6 +1065,84 @@ mod tests {
             assert!(force);
         } else {
             panic!("Expected Register command");
+        }
+    }
+
+    // RenameTag command tests
+    #[test]
+    fn test_parse_rename_tag() {
+        let result = parse_args(&args(&["goto", "--rename-tag", "oldtag", "newtag"]));
+        assert!(result.is_ok());
+        if let Command::RenameTag { old_tag, new_tag, dry_run, force } = result.unwrap().command {
+            assert_eq!(old_tag, "oldtag");
+            assert_eq!(new_tag, "newtag");
+            assert!(!dry_run);
+            assert!(!force);
+        } else {
+            panic!("Expected RenameTag command");
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_tag_missing_args() {
+        let result = parse_args(&args(&["goto", "--rename-tag", "oldtag"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    #[test]
+    fn test_parse_rename_tag_with_force() {
+        let result = parse_args(&args(&["goto", "--rename-tag", "old", "new", "--force"]));
+        assert!(result.is_ok());
+        if let Command::RenameTag { old_tag, new_tag, dry_run, force } = result.unwrap().command {
+            assert_eq!(old_tag, "old");
+            assert_eq!(new_tag, "new");
+            assert!(!dry_run);
+            assert!(force);
+        } else {
+            panic!("Expected RenameTag command");
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_tag_with_short_force() {
+        let result = parse_args(&args(&["goto", "--rename-tag", "old", "new", "-f"]));
+        assert!(result.is_ok());
+        if let Command::RenameTag { old_tag, new_tag, dry_run, force } = result.unwrap().command {
+            assert_eq!(old_tag, "old");
+            assert_eq!(new_tag, "new");
+            assert!(!dry_run);
+            assert!(force);
+        } else {
+            panic!("Expected RenameTag command");
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_tag_with_dry_run() {
+        let result = parse_args(&args(&["goto", "--rename-tag", "old", "new", "--dry-run"]));
+        assert!(result.is_ok());
+        if let Command::RenameTag { old_tag, new_tag, dry_run, force } = result.unwrap().command {
+            assert_eq!(old_tag, "old");
+            assert_eq!(new_tag, "new");
+            assert!(dry_run);
+            assert!(!force);
+        } else {
+            panic!("Expected RenameTag command");
+        }
+    }
+
+    #[test]
+    fn test_parse_rename_tag_with_all_flags() {
+        let result = parse_args(&args(&["goto", "--rename-tag", "old", "new", "--dry-run", "--force"]));
+        assert!(result.is_ok());
+        if let Command::RenameTag { old_tag, new_tag, dry_run, force } = result.unwrap().command {
+            assert_eq!(old_tag, "old");
+            assert_eq!(new_tag, "new");
+            assert!(dry_run);
+            assert!(force);
+        } else {
+            panic!("Expected RenameTag command");
         }
     }
 }
