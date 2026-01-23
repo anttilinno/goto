@@ -939,4 +939,109 @@ mod tests {
         assert!(result.is_ok());
         assert!(matches!(result.unwrap().command, Command::CheckUpdate));
     }
+
+    // Short flag tests
+    #[test]
+    fn test_parse_stats_short() {
+        let result = parse_args(&args(&["goto", "-s"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::Stats));
+    }
+
+    #[test]
+    fn test_parse_tags_short() {
+        let result = parse_args(&args(&["goto", "-T"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::ListTags));
+    }
+
+    #[test]
+    fn test_parse_recent_short() {
+        let result = parse_args(&args(&["goto", "-R"]));
+        assert!(result.is_ok());
+        if let Command::Recent { count, navigate_to } = result.unwrap().command {
+            assert_eq!(count, Some(10));
+            assert_eq!(navigate_to, None);
+        } else {
+            panic!("Expected Recent command");
+        }
+    }
+
+    #[test]
+    fn test_parse_recent_short_with_number() {
+        let result = parse_args(&args(&["goto", "-R", "5"]));
+        assert!(result.is_ok());
+        if let Command::Recent { count, navigate_to } = result.unwrap().command {
+            assert_eq!(count, None);
+            assert_eq!(navigate_to, Some(5));
+        } else {
+            panic!("Expected Recent command");
+        }
+    }
+
+    #[test]
+    fn test_parse_export_short() {
+        let result = parse_args(&args(&["goto", "-e"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::Export));
+    }
+
+    #[test]
+    fn test_parse_import_short() {
+        let result = parse_args(&args(&["goto", "-i", "backup.toml"]));
+        assert!(result.is_ok());
+        if let Command::Import { file, strategy } = result.unwrap().command {
+            assert_eq!(file, "backup.toml");
+            assert!(matches!(strategy, ImportStrategy::Skip));
+        } else {
+            panic!("Expected Import command");
+        }
+    }
+
+    #[test]
+    fn test_parse_import_short_with_strategy() {
+        let result = parse_args(&args(&["goto", "-i", "backup.toml", "--strategy=overwrite"]));
+        assert!(result.is_ok());
+        if let Command::Import { file, strategy } = result.unwrap().command {
+            assert_eq!(file, "backup.toml");
+            assert!(matches!(strategy, ImportStrategy::Overwrite));
+        } else {
+            panic!("Expected Import command");
+        }
+    }
+
+    #[test]
+    fn test_parse_import_short_missing_file() {
+        let result = parse_args(&args(&["goto", "-i"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    #[test]
+    fn test_parse_register_with_short_tags() {
+        let result = parse_args(&args(&["goto", "-r", "dev", "/path", "-t", "work,rust"]));
+        assert!(result.is_ok());
+        if let Command::Register { name, path, tags, force } = result.unwrap().command {
+            assert_eq!(name, "dev");
+            assert_eq!(path, "/path");
+            assert_eq!(tags, vec!["work", "rust"]);
+            assert!(!force);
+        } else {
+            panic!("Expected Register command");
+        }
+    }
+
+    #[test]
+    fn test_parse_register_with_short_tags_and_force() {
+        let result = parse_args(&args(&["goto", "-r", "dev", "/path", "-t", "work", "-f"]));
+        assert!(result.is_ok());
+        if let Command::Register { name, path, tags, force } = result.unwrap().command {
+            assert_eq!(name, "dev");
+            assert_eq!(path, "/path");
+            assert_eq!(tags, vec!["work"]);
+            assert!(force);
+        } else {
+            panic!("Expected Register command");
+        }
+    }
 }
