@@ -56,3 +56,59 @@ pub fn confirm(message: &str, default: bool) -> io::Result<bool> {
         _ => default,
     })
 }
+
+/// Prompt user to select from numbered options.
+///
+/// Returns the selected index (0-based) on valid input, None on cancel.
+/// Returns None immediately if stdin is not a terminal (non-interactive mode).
+///
+/// # Arguments
+/// * `options` - List of option labels to display
+/// * `similarity_scores` - Optional scores to display as percentages (0.0-1.0)
+///
+/// # Returns
+/// * `Ok(Some(index))` - User selected option at index
+/// * `Ok(None)` - User cancelled (Enter or invalid input) or non-interactive
+/// * `Err` - I/O error occurred
+pub fn prompt_selection(
+    options: &[&str],
+    similarity_scores: Option<&[f64]>,
+) -> io::Result<Option<usize>> {
+    // Non-interactive mode: return None immediately
+    if !io::stdin().is_terminal() {
+        return Ok(None);
+    }
+
+    // Display options with numbers
+    for (i, option) in options.iter().enumerate() {
+        if let Some(scores) = similarity_scores {
+            if let Some(score) = scores.get(i) {
+                let percentage = (score * 100.0).round() as u32;
+                eprintln!("  [{}] {} ({}% match)", i + 1, option, percentage);
+            } else {
+                eprintln!("  [{}] {}", i + 1, option);
+            }
+        } else {
+            eprintln!("  [{}] {}", i + 1, option);
+        }
+    }
+
+    eprint!("Select [1-{}] or Enter to cancel: ", options.len());
+    io::stderr().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+
+    let input = input.trim();
+
+    // Empty input = cancel
+    if input.is_empty() {
+        return Ok(None);
+    }
+
+    // Try to parse as number
+    match input.parse::<usize>() {
+        Ok(n) if n >= 1 && n <= options.len() => Ok(Some(n - 1)),
+        _ => Ok(None), // Invalid input = cancel
+    }
+}
