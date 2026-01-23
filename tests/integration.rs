@@ -1007,6 +1007,7 @@ fn test_tag_management() {
     fs::create_dir_all(&personal_dir).unwrap();
 
     // Step 2: Register alias with multiple tags (comma-separated)
+    // Use --force to skip confirmation for new tags
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
     cmd.args([
@@ -1014,6 +1015,7 @@ fn test_tag_management() {
         "work",
         work_dir.to_str().unwrap(),
         "--tags=office,coding,daily",
+        "--force",
     ]);
     let output = cmd.output().unwrap();
     assert!(
@@ -1053,10 +1055,10 @@ fn test_tag_management() {
         "Register personal alias failed"
     );
 
-    // Add a tag to the alias
+    // Add a tag to the alias (use --force for new tag)
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "personal", "home"]);
+    cmd.args(["--tag", "personal", "home", "--force"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -1131,9 +1133,10 @@ fn test_tag_management() {
     );
 
     // Step 6: Test tag normalization - adding uppercase tag should normalize to lowercase
+    // Use --force for new tag
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "personal", "WORK"]);
+    cmd.args(["--tag", "personal", "WORK", "--force"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -1190,7 +1193,7 @@ fn test_list_sort_and_filter() {
     fs::create_dir_all(&home).unwrap();
     fs::create_dir_all(&proj).unwrap();
 
-    // Register with tags
+    // Register with tags (use --force to skip confirmation for new tags)
     let aliases = [
         ("work", &work, "office"),
         ("home", &home, "personal"),
@@ -1200,7 +1203,7 @@ fn test_list_sort_and_filter() {
     for (name, path, tag) in aliases {
         let mut cmd = goto_bin();
         cmd.env("GOTO_DB", &db_dir);
-        cmd.args(["-r", name, path.to_str().unwrap(), &format!("--tags={}", tag)]);
+        cmd.args(["-r", name, path.to_str().unwrap(), &format!("--tags={}", tag), "--force"]);
         assert!(cmd.output().unwrap().status.success());
     }
 
@@ -1606,6 +1609,305 @@ fn test_config_shows_update_settings() {
     assert!(
         stdout.contains("check_interval_hours"),
         "Config should show check_interval_hours setting: {}",
+        stdout
+    );
+}
+
+// Tests for tag creation confirmation (TAG-01 through TAG-04)
+
+#[test]
+fn test_tag_creation_with_force_flag() {
+    // TAG-04: --force bypasses all tag confirmation prompts
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register alias with initial tag using --force
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args([
+        "-r",
+        "proj",
+        test_dir.to_str().unwrap(),
+        "--tags=existing",
+        "--force",
+    ]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Register with --force should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Add new tag with --force - should succeed without prompting
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--tag", "proj", "newtag", "--force"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Adding tag with --force should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify both tags exist
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.arg("--tags");
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("existing"),
+        "Tag 'existing' should exist: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("newtag"),
+        "Tag 'newtag' should exist: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_tag_creation_first_tag_no_confirmation() {
+    // TAG-02: First tag (when no tags exist) is created silently
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register alias without tags first
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "proj", test_dir.to_str().unwrap()]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Register should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Add first tag without --force - should succeed (bootstrapping)
+    // In non-interactive (test) mode, confirm() returns default (false)
+    // but when no tags exist, confirmation is skipped
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--tag", "proj", "firsttag"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "First tag should be created without confirmation: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify tag exists
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.arg("--tags");
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("firsttag"),
+        "First tag should be created: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_tag_creation_denied_in_non_interactive() {
+    // TAG-03: Non-interactive mode (piped stdin) denies new tag creation by default
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register alias with initial tag using --force
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args([
+        "-r",
+        "proj",
+        test_dir.to_str().unwrap(),
+        "--tags=existing",
+        "--force",
+    ]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Setup should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Try to add new tag without --force in non-interactive mode
+    // Should fail because confirm() returns false (default) in non-terminal
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--tag", "proj", "newtag"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "New tag creation should be denied in non-interactive mode"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cancelled"),
+        "Error should mention cancellation: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_register_with_new_tag_denied_in_non_interactive() {
+    // TAG-03: Non-interactive denies new tag creation during registration
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let dir1 = temp.path().join("dir1");
+    let dir2 = temp.path().join("dir2");
+    fs::create_dir(&dir1).unwrap();
+    fs::create_dir(&dir2).unwrap();
+
+    // Register first alias with tag using --force
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args([
+        "-r",
+        "first",
+        dir1.to_str().unwrap(),
+        "--tags=existing",
+        "--force",
+    ]);
+    assert!(
+        cmd.output().unwrap().status.success(),
+        "First registration should succeed"
+    );
+
+    // Try to register second alias with new tag without --force
+    // Should fail because confirm() returns false in non-terminal
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "second", dir2.to_str().unwrap(), "--tags=newtag"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "Registration with new tag should be denied in non-interactive mode"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cancelled"),
+        "Error should mention cancellation: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_existing_tag_no_confirmation_needed() {
+    // Using a tag that already exists should not prompt for confirmation
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let dir1 = temp.path().join("dir1");
+    let dir2 = temp.path().join("dir2");
+    fs::create_dir(&dir1).unwrap();
+    fs::create_dir(&dir2).unwrap();
+
+    // Register first alias with tag
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args([
+        "-r",
+        "first",
+        dir1.to_str().unwrap(),
+        "--tags=work",
+        "--force",
+    ]);
+    assert!(
+        cmd.output().unwrap().status.success(),
+        "First registration should succeed"
+    );
+
+    // Register second alias with same tag WITHOUT --force
+    // Should succeed because 'work' already exists
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "second", dir2.to_str().unwrap(), "--tags=work"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Registration with existing tag should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify both aliases have the tag
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.arg("--tags");
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // 'work' tag should show 2 aliases
+    assert!(
+        stdout.contains("work") && stdout.contains("2"),
+        "Tag 'work' should be on 2 aliases: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_tag_shorthand_force_flag() {
+    // Test that -f also works as shorthand for --force
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register alias with initial tag using -f
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args([
+        "-r",
+        "proj",
+        test_dir.to_str().unwrap(),
+        "--tags=existing",
+        "-f",
+    ]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Register with -f should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Add new tag with -f - should succeed
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--tag", "proj", "newtag", "-f"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Adding tag with -f should succeed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify tag exists
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.arg("--tags");
+    let output = cmd.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("newtag"),
+        "Tag 'newtag' should exist: {}",
         stdout
     );
 }
