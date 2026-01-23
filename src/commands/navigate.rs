@@ -208,14 +208,12 @@ mod tests {
         db.insert(Alias::new("project", target.path().to_str().unwrap()).unwrap());
         db.insert(Alias::new("work", target.path().to_str().unwrap()).unwrap());
 
-        // Searching for "proj" should suggest similar aliases
+        // Searching for "proj" - high confidence match found, prompt shown
+        // In non-interactive mode, confirm() returns false, navigation cancelled
         let result = navigate(&mut db, "proj");
-        // Should either succeed (single match) or return suggestions
-        // The behavior depends on fuzzy matching threshold
-        if result.is_err() {
-            let err = result.unwrap_err().to_string();
-            assert!(err.contains("not found") || err.contains("Did you mean"));
-        }
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cancelled"), "Expected 'cancelled' error, got: {}", err);
     }
 
     #[test]
@@ -240,7 +238,8 @@ mod tests {
 
     #[test]
     fn test_navigate_single_fuzzy_match() {
-        // Test lines 45-46, 56-59, 61: single fuzzy match navigates directly
+        // Single high-confidence fuzzy match prompts for confirmation
+        // In non-interactive mode (piped stdin), confirm() returns false
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("aliases");
         let mut db = Database::load_from_path(&db_path).unwrap();
@@ -248,18 +247,21 @@ mod tests {
         let target = tempdir().unwrap();
         db.insert(Alias::new("myproject", target.path().to_str().unwrap()).unwrap());
 
-        // Typo should find single match and navigate
+        // Typo triggers prompt - non-interactive mode declines
         let result = navigate(&mut db, "myprojet");
-        assert!(result.is_ok());
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cancelled"), "Expected 'cancelled' error, got: {}", err);
 
-        // Should have recorded usage
+        // Usage should NOT be recorded (user declined)
         let alias = db.get("myproject").unwrap();
-        assert_eq!(alias.use_count, 1);
+        assert_eq!(alias.use_count, 0);
     }
 
     #[test]
     fn test_navigate_single_fuzzy_match_directory_not_found() {
-        // Test lines 48-50: single fuzzy match but directory doesn't exist
+        // High-confidence fuzzy match prompts for confirmation
+        // In non-interactive mode, confirm() returns false before directory check
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("aliases");
         let mut db = Database::load_from_path(&db_path).unwrap();
@@ -267,15 +269,17 @@ mod tests {
         // Create alias pointing to non-existent directory
         db.insert(Alias::new("myproject", "/nonexistent/fuzzy/path").unwrap());
 
-        // Typo should find single match but fail on directory check
+        // Typo triggers prompt - non-interactive mode declines before path check
         let result = navigate(&mut db, "myprojet");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("directory does not exist"));
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cancelled"), "Expected 'cancelled' error, got: {}", err);
     }
 
     #[test]
     fn test_navigate_single_fuzzy_match_not_a_directory() {
-        // Test lines 52-53: single fuzzy match but path is not a directory
+        // High-confidence fuzzy match prompts for confirmation
+        // In non-interactive mode, confirm() returns false before path check
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("aliases");
         let mut db = Database::load_from_path(&db_path).unwrap();
@@ -284,15 +288,17 @@ mod tests {
         let file = NamedTempFile::new().unwrap();
         db.insert(Alias::new("myproject", file.path().to_str().unwrap()).unwrap());
 
-        // Typo should find single match but fail on directory check
+        // Typo triggers prompt - non-interactive mode declines before path check
         let result = navigate(&mut db, "myprojet");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not a directory"));
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cancelled"), "Expected 'cancelled' error, got: {}", err);
     }
 
     #[test]
     fn test_navigate_multiple_fuzzy_matches() {
-        // Test lines 63-70: multiple fuzzy matches show suggestions
+        // Multiple fuzzy matches - best match (highest score >= 0.7) triggers prompt
+        // In non-interactive mode, confirm() returns false
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("aliases");
         let mut db = Database::load_from_path(&db_path).unwrap();
@@ -302,17 +308,38 @@ mod tests {
         db.insert(Alias::new("project2", target.path().to_str().unwrap()).unwrap());
         db.insert(Alias::new("project3", target.path().to_str().unwrap()).unwrap());
 
-        // Typo that matches multiple aliases
+        // "project" has high similarity to "project1" etc., prompts for best match
         let result = navigate(&mut db, "project");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("Did you mean"));
-        assert!(err.contains("project1") || err.contains("project2") || err.contains("project3"));
+        assert!(err.contains("cancelled"), "Expected 'cancelled' error, got: {}", err);
+    }
+
+    #[test]
+    fn test_navigate_fuzzy_no_close_match() {
+        // Fuzzy matches exist but none above 0.7 threshold - no prompt, just "not found"
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("aliases");
+        let mut db = Database::load_from_path(&db_path).unwrap();
+
+        let target = tempdir().unwrap();
+        // Very different aliases from search term
+        db.insert(Alias::new("alpha", target.path().to_str().unwrap()).unwrap());
+        db.insert(Alias::new("beta", target.path().to_str().unwrap()).unwrap());
+
+        // Search for something that has low similarity to all aliases
+        let result = navigate(&mut db, "zzznothing");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        // Should NOT contain "cancelled" (no prompt was shown)
+        assert!(!err.contains("cancelled"), "Should not prompt for low-confidence matches");
+        // Should contain "not found"
+        assert!(err.contains("not found"), "Expected 'not found' error, got: {}", err);
     }
 
     #[test]
     fn test_completions_empty_query() {
-        // Test lines 90-93: completions with empty query returns all sorted
+        // completions with empty query returns all sorted
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("aliases");
         let mut db = Database::load_from_path(&db_path).unwrap();
