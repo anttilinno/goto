@@ -82,6 +82,9 @@ pub enum Command {
     },
     Update,
     CheckUpdate,
+    PruneSnooze {
+        days: u32,
+    },
 }
 
 /// Parse command-line arguments into a structured Args object
@@ -262,6 +265,19 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
 
         "--check-update" => Command::CheckUpdate,
 
+        "--prune-snooze" => {
+            if args.len() < 3 {
+                return Err("Usage: goto --prune-snooze <days>".to_string());
+            }
+            let days: u32 = args[2].parse().map_err(|_| {
+                format!("Invalid number of days: {}. Please provide a positive integer.", args[2])
+            })?;
+            if days == 0 {
+                return Err("Number of days must be at least 1".to_string());
+            }
+            Command::PruneSnooze { days }
+        }
+
         _ => {
             if arg.starts_with('-') {
                 return Err(format!("Unknown option: {}", arg));
@@ -334,6 +350,7 @@ Usage:
   goto --install                  Install shell integration
   goto -U / --update              Update goto to latest version
   goto --check-update             Check for available updates
+  goto --prune-snooze <days>      Snooze stale alias notification for N days
   goto -v                         Show version
   goto -h                         Show this help
 
@@ -1144,5 +1161,38 @@ mod tests {
         } else {
             panic!("Expected RenameTag command");
         }
+    }
+
+    // PruneSnooze command tests
+    #[test]
+    fn test_parse_prune_snooze() {
+        let result = parse_args(&args(&["goto", "--prune-snooze", "7"]));
+        assert!(result.is_ok());
+        if let Command::PruneSnooze { days } = result.unwrap().command {
+            assert_eq!(days, 7);
+        } else {
+            panic!("Expected PruneSnooze command");
+        }
+    }
+
+    #[test]
+    fn test_parse_prune_snooze_missing_days() {
+        let result = parse_args(&args(&["goto", "--prune-snooze"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    #[test]
+    fn test_parse_prune_snooze_invalid_days() {
+        let result = parse_args(&args(&["goto", "--prune-snooze", "abc"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid number"));
+    }
+
+    #[test]
+    fn test_parse_prune_snooze_zero_days() {
+        let result = parse_args(&args(&["goto", "--prune-snooze", "0"]));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("at least 1"));
     }
 }

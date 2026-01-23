@@ -47,6 +47,8 @@ pub fn cleanup(db: &mut Database, config: &Config, dry_run: bool) -> Result<(), 
 
     if !dry_run {
         db.save()?;
+        // Reset prune cache since stale aliases are now cleaned
+        let _ = crate::commands::prune::reset_cache(config);
         println!("Cleanup complete.");
     }
 

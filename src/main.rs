@@ -124,16 +124,30 @@ fn run() -> Result<(), u8> {
         Command::Help | Command::Version | Command::Config | Command::Install { .. }
         | Command::Update | Command::CheckUpdate => unreachable!(),
 
+        Command::PruneSnooze { days } => {
+            commands::prune::snooze_notifications(&config, days).map_err(handle_error)
+        }
+
         Command::List { sort, filter } => {
-            commands::list::list_with_options(&db, &config, sort.as_deref(), filter.as_deref())
-                .map_err(handle_error)
+            let result = commands::list::list_with_options(&db, &config, sort.as_deref(), filter.as_deref())
+                .map_err(handle_error);
+            if result.is_ok() {
+                commands::prune::notify_if_stale_aliases(&config, &db);
+            }
+            result
         }
 
         Command::ListNames => commands::list::list_names(&db).map_err(handle_error),
 
         Command::ListTagsRaw => commands::tags::list_tags_raw(&db).map_err(handle_error),
 
-        Command::Stats => commands::stats::stats(&db, &config).map_err(handle_error),
+        Command::Stats => {
+            let result = commands::stats::stats(&db, &config).map_err(handle_error);
+            if result.is_ok() {
+                commands::prune::notify_if_stale_aliases(&config, &db);
+            }
+            result
+        }
 
         Command::Register { name, path, tags, force } => {
             commands::register::register_with_tags(&mut db, &name, &path, &tags, force)
@@ -173,7 +187,13 @@ fn run() -> Result<(), u8> {
                 .map_err(handle_error)
         }
 
-        Command::ListTags => commands::tags::list_tags(&db, &config).map_err(handle_error),
+        Command::ListTags => {
+            let result = commands::tags::list_tags(&db, &config).map_err(handle_error);
+            if result.is_ok() {
+                commands::prune::notify_if_stale_aliases(&config, &db);
+            }
+            result
+        }
 
         Command::Recent { count, navigate_to } => {
             if let Some(n) = navigate_to {
