@@ -105,6 +105,35 @@ impl Default for UpdateConfig {
     }
 }
 
+/// Prune notification settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PruneConfig {
+    /// Whether to automatically check for stale aliases
+    #[serde(default = "default_prune_auto_check")]
+    pub auto_check: bool,
+
+    /// How often to check for stale aliases (in hours)
+    #[serde(default = "default_prune_check_interval")]
+    pub check_interval_hours: u64,
+}
+
+fn default_prune_auto_check() -> bool {
+    true
+}
+
+fn default_prune_check_interval() -> u64 {
+    24
+}
+
+impl Default for PruneConfig {
+    fn default() -> Self {
+        Self {
+            auto_check: default_prune_auto_check(),
+            check_interval_hours: default_prune_check_interval(),
+        }
+    }
+}
+
 /// User-configurable settings loaded from TOML
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UserConfig {
@@ -116,6 +145,9 @@ pub struct UserConfig {
 
     #[serde(default)]
     pub update: UpdateConfig,
+
+    #[serde(default)]
+    pub prune: PruneConfig,
 }
 
 /// Application configuration
@@ -184,6 +216,10 @@ table_style = "unicode"  # unicode, ascii, minimal
 [update]
 auto_check = true       # Check for updates automatically
 check_interval_hours = 24
+
+[prune]
+auto_check = true        # Show notification when stale aliases exist
+check_interval_hours = 24
 "#;
 
         fs::write(&self.config_path, default_config)?;
@@ -203,6 +239,9 @@ check_interval_hours = 24
              table_style = \"{}\"\n\n\
              [update]\n\
              auto_check = {}\n\
+             check_interval_hours = {}\n\n\
+             [prune]\n\
+             auto_check = {}\n\
              check_interval_hours = {}\n",
             self.config_path.display(),
             self.user.general.fuzzy_threshold,
@@ -212,6 +251,8 @@ check_interval_hours = 24
             self.user.display.table_style,
             self.user.update.auto_check,
             self.user.update.check_interval_hours,
+            self.user.prune.auto_check,
+            self.user.prune.check_interval_hours,
         )
     }
 }
@@ -634,5 +675,65 @@ show_stats = true
         let formatted = config.format_config();
         assert!(formatted.contains("table_style"));
         assert!(formatted.contains("unicode"));
+    }
+
+    #[test]
+    fn test_parse_config_with_prune_section() {
+        let toml_str = r#"
+[prune]
+auto_check = false
+check_interval_hours = 48
+"#;
+        let config: UserConfig = toml::from_str(toml_str).unwrap();
+        assert!(!config.prune.auto_check);
+        assert_eq!(config.prune.check_interval_hours, 48);
+    }
+
+    #[test]
+    fn test_parse_config_missing_prune_uses_default() {
+        // Config without prune section should use defaults
+        let toml_str = r#"
+[general]
+fuzzy_threshold = 0.5
+"#;
+        let config: UserConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.prune.auto_check);
+        assert_eq!(config.prune.check_interval_hours, 24);
+    }
+
+    #[test]
+    fn test_default_config_file_contains_prune() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let config = Config {
+            database_path: temp_dir.path().to_path_buf(),
+            stack_path: temp_dir.path().join("goto_stack"),
+            config_path: config_path.clone(),
+            aliases_path: temp_dir.path().join("aliases.toml"),
+            user: UserConfig::default(),
+        };
+
+        config.create_default_config_file().unwrap();
+
+        let content = fs::read_to_string(&config_path).unwrap();
+        assert!(content.contains("[prune]"));
+        assert!(content.contains("auto_check = true"));
+    }
+
+    #[test]
+    fn test_format_config_includes_prune() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            database_path: temp_dir.path().to_path_buf(),
+            stack_path: temp_dir.path().join("goto_stack"),
+            config_path: temp_dir.path().join("config.toml"),
+            aliases_path: temp_dir.path().join("aliases.toml"),
+            user: UserConfig::default(),
+        };
+        let formatted = config.format_config();
+        assert!(formatted.contains("[prune]"));
+        assert!(formatted.contains("auto_check = true"));
+        assert!(formatted.contains("check_interval_hours = 24"));
     }
 }

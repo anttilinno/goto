@@ -6,6 +6,7 @@ pub mod import_export;
 pub mod install;
 pub mod list;
 pub mod navigate;
+pub mod prune;
 pub mod register;
 pub mod stack;
 pub mod stats;
