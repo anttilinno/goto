@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use crate::alias::AliasError;
+use crate::confirm;
 use crate::database::Database;
 use crate::fuzzy;
 
@@ -40,34 +41,40 @@ pub fn navigate(db: &mut Database, alias: &str) -> Result<(), Box<dyn std::error
 
         if matches.is_empty() {
             Err(format!("alias '{}' not found", alias).into())
-        } else if matches.len() == 1 && matches[0].1 >= 700 {
-            // Single fuzzy match with high confidence (>= 0.7 similarity) - use it
-            let name = matches[0].0.to_string();
-            if let Some(entry) = db.get(&name) {
-                // Verify directory exists
-                let path = Path::new(&entry.path);
-                if !path.exists() {
-                    return Err(AliasError::DirectoryNotFound(entry.path.clone()).into());
-                }
-                if !path.is_dir() {
-                    return Err(format!("not a directory: {}", entry.path).into());
-                }
-
-                let path_str = entry.path.clone();
-                db.record_usage(&name)?;
-                println!("{}", path_str);
-                db.save()?;
-            }
-            Ok(())
         } else {
-            // Multiple matches or single low-confidence match - show suggestions
-            let suggestions: Vec<String> = matches.iter().map(|(name, _)| name.to_string()).collect();
-            Err(format!(
-                "alias '{}' not found. Did you mean: {}?",
-                alias,
-                suggestions.join(", ")
-            )
-            .into())
+            // Check if best match has high confidence (>= 0.7 similarity)
+            let best_match = &matches[0];
+            if best_match.1 >= 700 {
+                // High confidence match - prompt for confirmation
+                let suggested = best_match.0.to_string();
+                eprintln!("Alias '{}' not found.", alias);
+
+                if confirm(&format!("Did you mean '{}'?", suggested), false)? {
+                    // User confirmed - navigate to suggested alias
+                    if let Some(entry) = db.get(&suggested) {
+                        // Verify directory exists
+                        let path = Path::new(&entry.path);
+                        if !path.exists() {
+                            return Err(AliasError::DirectoryNotFound(entry.path.clone()).into());
+                        }
+                        if !path.is_dir() {
+                            return Err(format!("not a directory: {}", entry.path).into());
+                        }
+
+                        let path_str = entry.path.clone();
+                        db.record_usage(&suggested)?;
+                        println!("{}", path_str);
+                        db.save()?;
+                    }
+                    Ok(())
+                } else {
+                    // User declined or non-interactive mode
+                    Err("Navigation cancelled".into())
+                }
+            } else {
+                // No match with high enough confidence - just report not found
+                Err(format!("alias '{}' not found", alias).into())
+            }
         }
     }
 }
