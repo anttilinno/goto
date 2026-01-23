@@ -1911,3 +1911,222 @@ fn test_tag_shorthand_force_flag() {
         stdout
     );
 }
+
+// Tests for multiple fuzzy suggestions (FUZZY-01 through FUZZY-06)
+
+#[test]
+fn test_fuzzy_multiple_suggestions_non_interactive() {
+    // FUZZY-06: Non-interactive mode (piped stdin) should exit with error, no prompt
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register multiple similar aliases to generate multiple suggestions
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "development", test_dir.to_str().unwrap()]);
+    cmd.output().unwrap();
+
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "developer", test_dir.to_str().unwrap()]);
+    cmd.output().unwrap();
+
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "developing", test_dir.to_str().unwrap()]);
+    cmd.output().unwrap();
+
+    // Search for typo - non-interactive should fail immediately
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.arg("develpment"); // typo
+    let output = cmd.output().unwrap();
+
+    // Should fail (non-interactive cancels)
+    assert!(
+        !output.status.success(),
+        "Non-interactive fuzzy navigation should fail"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cancelled") || stderr.contains("Did you mean"),
+        "Expected cancellation or suggestion message, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_fuzzy_shows_suggestions_on_stderr() {
+    // FUZZY-05: All prompts output to stderr (stdout clean for shell wrapper)
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register similar aliases
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "myproject", test_dir.to_str().unwrap()]);
+    cmd.output().unwrap();
+
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "myprojects", test_dir.to_str().unwrap()]);
+    cmd.output().unwrap();
+
+    // Search for typo (non-interactive)
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.arg("myprojet"); // typo
+    let output = cmd.output().unwrap();
+
+    // stdout should be EMPTY (no path output when cancelled)
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.trim().is_empty(),
+        "stdout should be empty when navigation cancelled, got: {}",
+        stdout
+    );
+
+    // stderr should contain "Did you mean" header
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Did you mean"),
+        "stderr should contain 'Did you mean', got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_fuzzy_non_interactive_behavior() {
+    // FUZZY-03/FUZZY-02: In non-interactive mode, prompt_selection returns immediately
+    // so we only see "Did you mean:" and "cancelled" - NOT the numbered options
+    // (numbered options with percentages are only shown in interactive terminal mode)
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register aliases
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "testproject", test_dir.to_str().unwrap()]);
+    cmd.output().unwrap();
+
+    // Search for typo
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.arg("testprojet"); // typo
+    let output = cmd.output().unwrap();
+
+    // In non-interactive mode:
+    // - "Did you mean:" header is shown
+    // - prompt_selection() returns None immediately (no options displayed)
+    // - "Navigation cancelled" error occurs
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Did you mean"),
+        "stderr should contain 'Did you mean', got: {}",
+        stderr
+    );
+    assert!(
+        stderr.contains("cancelled"),
+        "stderr should contain 'cancelled' for non-interactive mode, got: {}",
+        stderr
+    );
+    // Exit code should be non-zero
+    assert!(
+        !output.status.success(),
+        "Non-interactive fuzzy should fail"
+    );
+}
+
+#[test]
+fn test_fuzzy_multiple_matches_triggers_prompt() {
+    // FUZZY-02/FUZZY-01: Multiple similar aliases trigger the selection prompt
+    // In non-interactive mode, this results in cancellation
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register multiple similar aliases
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "project1", test_dir.to_str().unwrap()]);
+    cmd.output().unwrap();
+
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "project2", test_dir.to_str().unwrap()]);
+    cmd.output().unwrap();
+
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "project3", test_dir.to_str().unwrap()]);
+    cmd.output().unwrap();
+
+    // Search for partial match - high confidence match should trigger prompt
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.arg("project"); // matches all three with high similarity
+    let output = cmd.output().unwrap();
+
+    // Should show "Did you mean:" and cancel in non-interactive
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Did you mean"),
+        "High similarity matches should trigger suggestion, got: {}",
+        stderr
+    );
+    assert!(
+        !output.status.success(),
+        "Non-interactive should fail with cancellation"
+    );
+}
+
+#[test]
+fn test_fuzzy_low_confidence_no_prompt() {
+    // Test that low-confidence matches don't trigger prompt at all
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register an alias with very different name
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "xyz", test_dir.to_str().unwrap()]);
+    cmd.output().unwrap();
+
+    // Search for something completely different
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.arg("abcdefghijk"); // no similarity
+    let output = cmd.output().unwrap();
+
+    // Should just say "not found" without "Did you mean"
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("not found"),
+        "Low confidence should report 'not found', got: {}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("Did you mean"),
+        "Low confidence should NOT trigger prompt, got: {}",
+        stderr
+    );
+}
