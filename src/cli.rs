@@ -97,7 +97,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             filter: find_flag_value(args, "--filter="),
         },
 
-        "--stats" => Command::Stats,
+        "-s" | "--stats" => Command::Stats,
 
         "--list-aliases" | "--names-only" => Command::ListNames,
 
@@ -105,9 +105,10 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
 
         "-r" | "--register" => {
             if args.len() < 4 {
-                return Err("Usage: goto -r <alias> <directory> [--tags=tag1,tag2] [--force]".to_string());
+                return Err("Usage: goto -r <alias> <directory> [-t tags] [--force]".to_string());
             }
             let tags = find_flag_value(args, "--tags=")
+                .or_else(|| find_space_separated_flag(args, "-t"))
                 .map(|t| t.split(',').map(String::from).collect::<Vec<_>>())
                 .unwrap_or_default();
             let force = args.iter().any(|a| a == "--force" || a == "-f");
@@ -152,7 +153,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
 
         "-o" | "--pop" => Command::Pop,
 
-        "--export" => Command::Export,
+        "-e" | "--export" => Command::Export,
 
         "--rename" => {
             if args.len() < 4 {
@@ -186,9 +187,9 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             }
         }
 
-        "--tags" => Command::ListTags,
+        "-T" | "--tags" => Command::ListTags,
 
-        "--recent" => {
+        "-R" | "--recent" => {
             if args.len() >= 3 {
                 if let Ok(n) = args[2].parse::<usize>() {
                     if n >= 1 && n <= 20 && args.len() == 3 {
@@ -216,7 +217,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
 
         "--recent-clear" => Command::RecentClear,
 
-        "--import" => {
+        "-i" | "--import" => {
             if args.len() < 3 {
                 return Err(
                     "Usage: goto --import <file> [--strategy=skip|overwrite|rename]".to_string(),
@@ -260,6 +261,14 @@ fn find_flag_value(args: &[String], prefix: &str) -> Option<String> {
     args.iter()
         .find(|a| a.starts_with(prefix))
         .map(|a| a[prefix.len()..].to_string())
+}
+
+/// Find a flag value with space separator (e.g., "-t work,rust")
+fn find_space_separated_flag(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.to_string())
 }
 
 /// Print brief usage information
