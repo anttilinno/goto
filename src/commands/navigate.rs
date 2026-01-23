@@ -357,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_completions_with_query() {
-        // Test lines 97-100: completions with query returns fuzzy matches
+        // completions with query returns fuzzy matches
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("aliases");
         let mut db = Database::load_from_path(&db_path).unwrap();
@@ -370,5 +370,29 @@ mod tests {
         // Query should filter to matching aliases
         let result = completions(&db, "pro");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_navigate_fuzzy_noninteractive_declines() {
+        // FUZ-05: When stdin is not a TTY (piped), confirm() returns false (default)
+        // This ensures scripts don't hang waiting for input
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("aliases");
+        let mut db = Database::load_from_path(&db_path).unwrap();
+
+        let target = tempdir().unwrap();
+        db.insert(Alias::new("myproject", target.path().to_str().unwrap()).unwrap());
+
+        // Typo with high similarity - would prompt in interactive mode
+        let result = navigate(&mut db, "myprojet");
+
+        // Non-interactive mode: confirm() returns false, navigation cancelled
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cancelled"), "Expected 'cancelled' error, got: {}", err);
+
+        // Verify no usage was recorded (user didn't confirm)
+        let alias = db.get("myproject").unwrap();
+        assert_eq!(alias.use_count, 0, "Usage should not be recorded when cancelled");
     }
 }
