@@ -2,6 +2,7 @@
 
 use crate::alias::validate_tag;
 use crate::config::Config;
+use crate::confirm;
 use crate::database::Database;
 use crate::table::{create_table, TableStyle};
 
@@ -14,11 +15,27 @@ use crate::table::{create_table, TableStyle};
 /// * `db` - The alias database
 /// * `alias` - The alias to tag
 /// * `tag_name` - The tag to add
-/// * `_force` - If true, skip confirmation for new tags (used in future plan)
-pub fn tag(db: &mut Database, alias: &str, tag_name: &str, _force: bool) -> Result<(), Box<dyn std::error::Error>> {
+/// * `force` - If true, skip confirmation for new tags
+pub fn tag(db: &mut Database, alias: &str, tag_name: &str, force: bool) -> Result<(), Box<dyn std::error::Error>> {
     // Normalize and validate the tag
     let tag_name = tag_name.trim().to_lowercase();
     validate_tag(&tag_name)?;
+
+    // Check if this is a new tag (doesn't exist on any alias)
+    let existing_tags = db.get_all_tags();
+    let is_new_tag = !existing_tags.contains_key(&tag_name);
+    let has_any_tags = !existing_tags.is_empty();
+
+    // Confirm new tag creation if:
+    // - Tag doesn't exist anywhere
+    // - Other tags exist (not bootstrapping)
+    // - Not using --force
+    if is_new_tag && has_any_tags && !force {
+        let message = format!("Tag '{}' doesn't exist. Create it?", tag_name);
+        if !confirm(&message, false)? {
+            return Err("Tag creation cancelled".into());
+        }
+    }
 
     if let Some(entry) = db.get_mut(alias) {
         entry.add_tag(&tag_name);
@@ -117,6 +134,7 @@ mod tests {
     fn test_tag() {
         let (mut db, _file) = create_test_db();
 
+        // First tag created without confirmation (bootstrapping)
         let result = tag(&mut db, "test", "work", false);
         assert!(result.is_ok());
 
@@ -128,6 +146,7 @@ mod tests {
     fn test_tag_normalizes_to_lowercase() {
         let (mut db, _file) = create_test_db();
 
+        // First tag - no confirmation needed
         let result = tag(&mut db, "test", "WORK", false);
         assert!(result.is_ok());
 
@@ -140,6 +159,7 @@ mod tests {
     fn test_tag_trims_whitespace() {
         let (mut db, _file) = create_test_db();
 
+        // First tag - no confirmation needed
         let result = tag(&mut db, "test", "  work  ", false);
         assert!(result.is_ok());
 
@@ -152,15 +172,15 @@ mod tests {
         let (mut db, _file) = create_test_db();
 
         // Empty tag should fail
-        let result = tag(&mut db, "test", "", false);
+        let result = tag(&mut db, "test", "", true);
         assert!(result.is_err());
 
         // Invalid characters should fail
-        let result = tag(&mut db, "test", "work@home", false);
+        let result = tag(&mut db, "test", "work@home", true);
         assert!(result.is_err());
 
         // Starting with hyphen should fail
-        let result = tag(&mut db, "test", "-work", false);
+        let result = tag(&mut db, "test", "-work", true);
         assert!(result.is_err());
     }
 
@@ -168,7 +188,7 @@ mod tests {
     fn test_tag_idempotent() {
         let (mut db, _file) = create_test_db();
 
-        // Add tag twice
+        // Add tag twice - first one succeeds (bootstrapping), second is idempotent (tag exists)
         tag(&mut db, "test", "work", false).unwrap();
         let result = tag(&mut db, "test", "work", false);
         assert!(result.is_ok());
@@ -181,6 +201,7 @@ mod tests {
     #[test]
     fn test_tag_not_found() {
         let (mut db, _file) = create_test_db();
+        // First tag - no confirmation needed, but alias doesn't exist
         let result = tag(&mut db, "nonexistent", "work", false);
         assert!(result.is_err());
     }
@@ -188,7 +209,7 @@ mod tests {
     #[test]
     fn test_untag() {
         let (mut db, _file) = create_test_db();
-        tag(&mut db, "test", "work", false).unwrap();
+        tag(&mut db, "test", "work", true).unwrap();
 
         let result = untag(&mut db, "test", "work");
         assert!(result.is_ok());
@@ -200,7 +221,7 @@ mod tests {
     #[test]
     fn test_untag_normalizes_to_lowercase() {
         let (mut db, _file) = create_test_db();
-        tag(&mut db, "test", "work", false).unwrap();
+        tag(&mut db, "test", "work", true).unwrap();
 
         // Should remove "work" even when passed as "WORK"
         let result = untag(&mut db, "test", "WORK");
@@ -230,8 +251,9 @@ mod tests {
     fn test_list_tags() {
         let (mut db, _file) = create_test_db();
         let config = Config::load().unwrap();
-        tag(&mut db, "test", "work", false).unwrap();
-        tag(&mut db, "test", "important", false).unwrap();
+        // Use force=true for second tag (first tag exists)
+        tag(&mut db, "test", "work", true).unwrap();
+        tag(&mut db, "test", "important", true).unwrap();
 
         let result = list_tags(&db, &config);
         assert!(result.is_ok());
@@ -249,12 +271,12 @@ mod tests {
     fn test_list_tags_shows_counts() {
         let (mut db, _file) = create_test_db_with_multiple_aliases();
 
-        // Add "work" tag to two aliases
-        tag(&mut db, "proj1", "work", false).unwrap();
-        tag(&mut db, "proj2", "work", false).unwrap();
+        // Add "work" tag to two aliases (use force=true for subsequent new tags)
+        tag(&mut db, "proj1", "work", true).unwrap();
+        tag(&mut db, "proj2", "work", true).unwrap();
 
         // Add "docs" tag to one alias
-        tag(&mut db, "docs", "docs", false).unwrap();
+        tag(&mut db, "docs", "docs", true).unwrap();
 
         let tag_counts = db.get_all_tags();
         assert_eq!(tag_counts.get("work"), Some(&2));
@@ -264,8 +286,8 @@ mod tests {
     #[test]
     fn test_list_tags_raw() {
         let (mut db, _file) = create_test_db();
-        tag(&mut db, "test", "work", false).unwrap();
-        tag(&mut db, "test", "important", false).unwrap();
+        tag(&mut db, "test", "work", true).unwrap();
+        tag(&mut db, "test", "important", true).unwrap();
 
         let result = list_tags_raw(&db);
         assert!(result.is_ok());
@@ -276,5 +298,67 @@ mod tests {
         let (db, _file) = create_test_db();
         let result = list_tags_raw(&db);
         assert!(result.is_ok());
+    }
+
+    // Tests for confirmation behavior (TAG-01 through TAG-04)
+
+    #[test]
+    fn test_tag_first_tag_no_confirmation_needed() {
+        // TAG-02: First tag is created silently without prompt
+        let (mut db, _file) = create_test_db();
+
+        // No tags exist, so first tag should succeed without confirmation
+        let result = tag(&mut db, "test", "work", false);
+        assert!(result.is_ok());
+
+        let alias = db.get("test").unwrap();
+        assert!(alias.has_tag("work"));
+    }
+
+    #[test]
+    fn test_tag_new_tag_denied_in_non_interactive() {
+        // TAG-03: Non-interactive mode (piped stdin) denies new tag creation
+        let (mut db, _file) = create_test_db();
+
+        // Create first tag (bootstrapping - succeeds)
+        tag(&mut db, "test", "existing", true).unwrap();
+
+        // Try to create new tag without force - should be denied in non-interactive
+        // (tests run with piped stdin, so confirm() returns default=false)
+        let result = tag(&mut db, "test", "newtag", false);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cancelled"));
+    }
+
+    #[test]
+    fn test_tag_force_bypasses_confirmation() {
+        // TAG-04: --force bypasses all tag confirmation prompts
+        let (mut db, _file) = create_test_db();
+
+        // Create first tag
+        tag(&mut db, "test", "existing", true).unwrap();
+
+        // With force=true, new tag creation should succeed
+        let result = tag(&mut db, "test", "newtag", true);
+        assert!(result.is_ok());
+
+        let alias = db.get("test").unwrap();
+        assert!(alias.has_tag("newtag"));
+    }
+
+    #[test]
+    fn test_tag_existing_tag_no_confirmation() {
+        // Adding a tag that already exists on another alias needs no confirmation
+        let (mut db, _file) = create_test_db_with_multiple_aliases();
+
+        // Create tag on proj1
+        tag(&mut db, "proj1", "work", true).unwrap();
+
+        // Add same tag to proj2 - should succeed without confirmation (tag exists)
+        let result = tag(&mut db, "proj2", "work", false);
+        assert!(result.is_ok());
+
+        let alias = db.get("proj2").unwrap();
+        assert!(alias.has_tag("work"));
     }
 }
