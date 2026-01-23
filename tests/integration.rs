@@ -2130,3 +2130,212 @@ fn test_fuzzy_low_confidence_no_prompt() {
         stderr
     );
 }
+
+// Tests for --rename-tag command
+
+#[test]
+fn test_rename_tag_integration() {
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register alias with tag
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "proj", test_dir.to_str().unwrap(), "--tags=work", "--force"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Register failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Rename the tag
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--rename-tag", "work", "job", "--force"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Rename tag failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("1 alias"),
+        "Should mention 1 alias affected: {}",
+        stdout
+    );
+
+    // Verify old tag gone, new tag exists
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-T"]);
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("job"),
+        "New tag 'job' should exist: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("work"),
+        "Old tag 'work' should be removed: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_rename_tag_dry_run_no_changes() {
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register alias with tag
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "proj", test_dir.to_str().unwrap(), "--tags=work", "--force"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Register failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Dry run
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--rename-tag", "work", "job", "--dry-run"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Dry run failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("dry-run"),
+        "Should mention dry-run: {}",
+        stdout
+    );
+
+    // Verify tag unchanged
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-T"]);
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("work"),
+        "Tag 'work' should still exist after dry-run: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_rename_tag_merge() {
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    let test_dir = temp.path().join("testdir");
+    fs::create_dir(&test_dir).unwrap();
+
+    // Register two aliases with different tags
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "proj1", test_dir.to_str().unwrap(), "--tags=work", "--force"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Register proj1 failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-r", "proj2", test_dir.to_str().unwrap(), "--tags=job", "--force"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Register proj2 failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Add "job" to proj1 as well so we can test merge doesn't duplicate
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--tag", "proj1", "job"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Tag proj1 failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Now merge "work" into "job"
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--rename-tag", "work", "job", "--force"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        output.status.success(),
+        "Merge tag failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Merge") || stdout.contains("merge"),
+        "Should mention merge: {}",
+        stdout
+    );
+
+    // Verify "work" gone, both have "job"
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["-T"]);
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("job"),
+        "Tag 'job' should exist: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("work"),
+        "Tag 'work' should be merged away: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_rename_tag_source_not_found() {
+    let temp = tempdir().unwrap();
+    let db_dir = temp.path().join("db");
+    fs::create_dir(&db_dir).unwrap();
+
+    // Try to rename non-existent tag
+    let mut cmd = goto_bin();
+    cmd.env("GOTO_DB", &db_dir);
+    cmd.args(["--rename-tag", "nonexistent", "newtag", "--force"]);
+    let output = cmd.output().unwrap();
+    assert!(
+        !output.status.success(),
+        "Should fail for non-existent tag"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("not found"),
+        "Error should mention 'not found': {}",
+        stderr
+    );
+}

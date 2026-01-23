@@ -168,6 +168,11 @@ fn run() -> Result<(), u8> {
             commands::tags::untag(&mut db, &alias, &tag).map_err(handle_error)
         }
 
+        Command::RenameTag { old_tag, new_tag, dry_run, force } => {
+            commands::tags::rename_tag(&mut db, &config, &old_tag, &new_tag, dry_run, force)
+                .map_err(handle_error)
+        }
+
         Command::ListTags => commands::tags::list_tags(&db, &config).map_err(handle_error),
 
         Command::Recent { count, navigate_to } => {
