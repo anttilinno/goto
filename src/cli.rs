@@ -25,6 +25,7 @@ pub enum Command {
         name: String,
         path: String,
         tags: Vec<String>,
+        force: bool,
     },
     Unregister {
         name: String,
@@ -49,6 +50,7 @@ pub enum Command {
     Tag {
         alias: String,
         tag: String,
+        force: bool,
     },
     Untag {
         alias: String,
@@ -103,15 +105,17 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
 
         "-r" | "--register" => {
             if args.len() < 4 {
-                return Err("Usage: goto -r <alias> <directory> [--tags=tag1,tag2]".to_string());
+                return Err("Usage: goto -r <alias> <directory> [--tags=tag1,tag2] [--force]".to_string());
             }
             let tags = find_flag_value(args, "--tags=")
                 .map(|t| t.split(',').map(String::from).collect::<Vec<_>>())
                 .unwrap_or_default();
+            let force = args.iter().any(|a| a == "--force" || a == "-f");
             Command::Register {
                 name: args[2].clone(),
                 path: args[3].clone(),
                 tags,
+                force,
             }
         }
 
@@ -162,11 +166,13 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
 
         "--tag" => {
             if args.len() < 4 {
-                return Err("Usage: goto --tag <alias> <tag>".to_string());
+                return Err("Usage: goto --tag <alias> <tag> [--force]".to_string());
             }
+            let force = args.iter().any(|a| a == "--force" || a == "-f");
             Command::Tag {
                 alias: args[2].clone(),
                 tag: args[3].clone(),
+                force,
             }
         }
 
@@ -271,6 +277,7 @@ Usage:
   goto <alias>                    Navigate to the directory
   goto -r <alias> <directory>     Register a new alias
   goto -r <alias> <dir> --tags=   Register with tags
+  goto -r <alias> <dir> --force   Skip confirmation for new tags
   goto -u <alias>                 Unregister an alias
   goto -l                         List all aliases
   goto -l --sort=<order>          List aliases with sorting
@@ -282,6 +289,7 @@ Usage:
   goto -o                         Pop and return to directory
   goto --rename <old> <new>       Rename an alias
   goto --tag <alias> <tag>        Add tag to alias
+  goto --tag <alias> <tag> -f     Add tag without confirmation
   goto --untag <alias> <tag>      Remove tag from alias
   goto --tags                     List all tags with counts
   goto --stats                    Show usage statistics
@@ -385,10 +393,11 @@ mod tests {
     fn test_parse_register() {
         let result = parse_args(&args(&["goto", "-r", "dev", "/path/to/dev"]));
         assert!(result.is_ok());
-        if let Command::Register { name, path, tags } = result.unwrap().command {
+        if let Command::Register { name, path, tags, force } = result.unwrap().command {
             assert_eq!(name, "dev");
             assert_eq!(path, "/path/to/dev");
             assert!(tags.is_empty());
+            assert!(!force);
         } else {
             panic!("Expected Register command");
         }
@@ -398,10 +407,53 @@ mod tests {
     fn test_parse_register_with_tags() {
         let result = parse_args(&args(&["goto", "-r", "dev", "/path", "--tags=work,rust"]));
         assert!(result.is_ok());
-        if let Command::Register { name, path, tags } = result.unwrap().command {
+        if let Command::Register { name, path, tags, force } = result.unwrap().command {
             assert_eq!(name, "dev");
             assert_eq!(path, "/path");
             assert_eq!(tags, vec!["work", "rust"]);
+            assert!(!force);
+        } else {
+            panic!("Expected Register command");
+        }
+    }
+
+    #[test]
+    fn test_parse_register_with_force() {
+        let result = parse_args(&args(&["goto", "-r", "dev", "/path", "--force"]));
+        assert!(result.is_ok());
+        if let Command::Register { name, path, tags, force } = result.unwrap().command {
+            assert_eq!(name, "dev");
+            assert_eq!(path, "/path");
+            assert!(tags.is_empty());
+            assert!(force);
+        } else {
+            panic!("Expected Register command");
+        }
+    }
+
+    #[test]
+    fn test_parse_register_with_short_force() {
+        let result = parse_args(&args(&["goto", "-r", "dev", "/path", "-f"]));
+        assert!(result.is_ok());
+        if let Command::Register { name, path, tags, force } = result.unwrap().command {
+            assert_eq!(name, "dev");
+            assert_eq!(path, "/path");
+            assert!(tags.is_empty());
+            assert!(force);
+        } else {
+            panic!("Expected Register command");
+        }
+    }
+
+    #[test]
+    fn test_parse_register_with_tags_and_force() {
+        let result = parse_args(&args(&["goto", "-r", "dev", "/path", "--tags=work", "--force"]));
+        assert!(result.is_ok());
+        if let Command::Register { name, path, tags, force } = result.unwrap().command {
+            assert_eq!(name, "dev");
+            assert_eq!(path, "/path");
+            assert_eq!(tags, vec!["work"]);
+            assert!(force);
         } else {
             panic!("Expected Register command");
         }
@@ -510,9 +562,10 @@ mod tests {
     fn test_parse_tag() {
         let result = parse_args(&args(&["goto", "--tag", "proj", "work"]));
         assert!(result.is_ok());
-        if let Command::Tag { alias, tag } = result.unwrap().command {
+        if let Command::Tag { alias, tag, force } = result.unwrap().command {
             assert_eq!(alias, "proj");
             assert_eq!(tag, "work");
+            assert!(!force);
         } else {
             panic!("Expected Tag command");
         }
@@ -523,6 +576,32 @@ mod tests {
         let result = parse_args(&args(&["goto", "--tag", "proj"]));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Usage:"));
+    }
+
+    #[test]
+    fn test_parse_tag_with_force() {
+        let result = parse_args(&args(&["goto", "--tag", "proj", "work", "--force"]));
+        assert!(result.is_ok());
+        if let Command::Tag { alias, tag, force } = result.unwrap().command {
+            assert_eq!(alias, "proj");
+            assert_eq!(tag, "work");
+            assert!(force);
+        } else {
+            panic!("Expected Tag command");
+        }
+    }
+
+    #[test]
+    fn test_parse_tag_with_short_force() {
+        let result = parse_args(&args(&["goto", "--tag", "proj", "work", "-f"]));
+        assert!(result.is_ok());
+        if let Command::Tag { alias, tag, force } = result.unwrap().command {
+            assert_eq!(alias, "proj");
+            assert_eq!(tag, "work");
+            assert!(force);
+        } else {
+            panic!("Expected Tag command");
+        }
     }
 
     #[test]

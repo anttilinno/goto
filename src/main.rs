@@ -135,7 +135,7 @@ fn run() -> Result<(), u8> {
 
         Command::Stats => commands::stats::stats(&db, &config).map_err(handle_error),
 
-        Command::Register { name, path, tags } => {
+        Command::Register { name, path, tags, .. } => {
             commands::register::register_with_tags(&mut db, &name, &path, &tags)
                 .map_err(handle_error)
         }
@@ -160,7 +160,7 @@ fn run() -> Result<(), u8> {
             commands::register::rename(&mut db, &old_name, &new_name).map_err(handle_error)
         }
 
-        Command::Tag { alias, tag } => {
+        Command::Tag { alias, tag, .. } => {
             commands::tags::tag(&mut db, &alias, &tag).map_err(handle_error)
         }
 
