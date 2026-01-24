@@ -11,6 +11,7 @@ pub mod commands;
 pub mod config;
 pub mod database;
 pub mod fuzzy;
+pub mod help;
 pub mod stack;
 pub mod table;
 
