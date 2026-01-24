@@ -14,6 +14,8 @@ pub struct Args {
 #[derive(Debug)]
 pub enum Command {
     Help,
+    HelpAll,
+    HelpCommand { command: String },
     Version,
     Config,
     List {
@@ -95,7 +97,19 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
 
     let arg = &args[1];
     let command = match arg.as_str() {
-        "-h" | "--help" => Command::Help,
+        "-h" | "--help" => {
+            if args.len() >= 3 {
+                // --help <command> - per-command help
+                Command::HelpCommand {
+                    command: args[2].clone(),
+                }
+            } else {
+                // Just --help - brief help
+                Command::Help
+            }
+        }
+
+        "--help-all" => Command::HelpAll,
 
         "-v" | "--version" => Command::Version,
 
@@ -1194,5 +1208,54 @@ mod tests {
         let result = parse_args(&args(&["goto", "--prune-snooze", "0"]));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("at least 1"));
+    }
+
+    // Help command tests
+    #[test]
+    fn test_parse_help_all() {
+        let result = parse_args(&args(&["goto", "--help-all"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::HelpAll));
+    }
+
+    #[test]
+    fn test_parse_help_command() {
+        let result = parse_args(&args(&["goto", "--help", "register"]));
+        assert!(result.is_ok());
+        if let Command::HelpCommand { command } = result.unwrap().command {
+            assert_eq!(command, "register");
+        } else {
+            panic!("Expected HelpCommand");
+        }
+    }
+
+    #[test]
+    fn test_parse_help_command_with_flag() {
+        let result = parse_args(&args(&["goto", "--help", "-r"]));
+        assert!(result.is_ok());
+        if let Command::HelpCommand { command } = result.unwrap().command {
+            assert_eq!(command, "-r");
+        } else {
+            panic!("Expected HelpCommand");
+        }
+    }
+
+    #[test]
+    fn test_parse_help_command_with_long_flag() {
+        let result = parse_args(&args(&["goto", "-h", "--register"]));
+        assert!(result.is_ok());
+        if let Command::HelpCommand { command } = result.unwrap().command {
+            assert_eq!(command, "--register");
+        } else {
+            panic!("Expected HelpCommand");
+        }
+    }
+
+    #[test]
+    fn test_parse_help_short_no_args() {
+        // Just -h without args should still give brief help
+        let result = parse_args(&args(&["goto", "-h"]));
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap().command, Command::Help));
     }
 }
