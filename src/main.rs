@@ -30,7 +30,18 @@ fn run() -> Result<(), u8> {
     // Handle commands that don't need config/database
     match &parsed.command {
         Command::Help => {
-            cli::print_help();
+            goto::help::print_brief_help();
+            return Ok(());
+        }
+        Command::HelpAll => {
+            goto::help::print_full_help();
+            return Ok(());
+        }
+        Command::HelpCommand { command } => {
+            goto::help::print_command_help(command).map_err(|e| {
+                eprintln!("{}", e);
+                1u8
+            })?;
             return Ok(());
         }
         Command::Version => {
@@ -121,7 +132,8 @@ fn run() -> Result<(), u8> {
     })?;
 
     match parsed.command {
-        Command::Help | Command::Version | Command::Config | Command::Install { .. }
+        Command::Help | Command::HelpAll | Command::HelpCommand { .. }
+        | Command::Version | Command::Config | Command::Install { .. }
         | Command::Update | Command::CheckUpdate => unreachable!(),
 
         Command::PruneSnooze { days } => {

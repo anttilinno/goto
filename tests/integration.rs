@@ -466,8 +466,26 @@ fn test_help() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Usage"), "Help output: {}", stdout);
+    // Brief help shows hints for more help
     assert!(
-        stdout.contains("register") || stdout.contains("-r"),
+        stdout.contains("--help-all") || stdout.contains("--help <command>"),
+        "Help output should mention --help-all or --help <command>: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_help_all() {
+    let mut cmd = goto_bin();
+    cmd.arg("--help-all");
+
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Usage"), "Help output: {}", stdout);
+    // Full help shows categories (once commands are populated)
+    assert!(
+        stdout.contains("goto") && stdout.contains("Navigate"),
         "Help output: {}",
         stdout
     );
