@@ -41,8 +41,8 @@ pub fn confirm(message: &str, default: bool) -> io::Result<bool> {
     }
 
     let suffix = if default { "(Y/n)" } else { "(y/N)" };
-    print!("{} {} ", message, suffix);
-    io::stdout().flush()?;
+    eprint!("{} {} ", message, suffix);
+    io::stderr().flush()?;
 
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
