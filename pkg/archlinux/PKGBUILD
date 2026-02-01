@@ -1,0 +1,25 @@
+# Maintainer: Antti Linno <antti@example.com>
+pkgname=goto-bin
+pkgver=1.10.0
+pkgrel=1
+pkgdesc="Navigate to aliased directories with autocomplete support"
+arch=('x86_64')
+url="https://github.com/anttilinno/goto"
+license=('MIT')
+depends=()
+provides=('goto')
+conflicts=('goto')
+source=(
+    "goto-bin-${pkgver}::https://github.com/anttilinno/goto/releases/download/v${pkgver}/goto-bin"
+    "goto.bash::https://raw.githubusercontent.com/anttilinno/goto/v${pkgver}/shell/goto.bash"
+    "goto.zsh::https://raw.githubusercontent.com/anttilinno/goto/v${pkgver}/shell/goto.zsh"
+    "goto.fish::https://raw.githubusercontent.com/anttilinno/goto/v${pkgver}/shell/goto.fish"
+)
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+package() {
+    install -Dm755 "goto-bin-${pkgver}" "$pkgdir/usr/bin/goto-bin"
+    install -Dm644 "goto.bash" "$pkgdir/usr/share/goto/goto.bash"
+    install -Dm644 "goto.zsh" "$pkgdir/usr/share/goto/goto.zsh"
+    install -Dm644 "goto.fish" "$pkgdir/usr/share/goto/goto.fish"
+}
