@@ -1,0 +1,20 @@
+pkgbase = goto-bin
+	pkgdesc = Shell utility for navigating to aliased directories
+	pkgver = 1.9.2
+	pkgrel = 1
+	url = https://github.com/anttilinno/goto
+	arch = x86_64
+	license = MIT
+	optdepends = fzf: interactive alias selection
+	provides = goto
+	conflicts = goto
+	source = goto-bin-1.9.2::https://github.com/anttilinno/goto/releases/download/v1.9.2/goto-bin-x86_64-unknown-linux-gnu
+	source = goto.bash-1.9.2::https://github.com/anttilinno/goto/raw/v1.9.2/shell/goto.bash
+	source = goto.zsh-1.9.2::https://github.com/anttilinno/goto/raw/v1.9.2/shell/goto.zsh
+	source = goto.fish-1.9.2::https://github.com/anttilinno/goto/raw/v1.9.2/shell/goto.fish
+	sha256sums = 0019dfc4b32d63c1392aa264aed2253c1e0c2fb09216f8e2cc269bbfb8bb49b5
+	sha256sums = fba4892d717de8fda6bb3d960845d4583710eb991bb36c5866dd87b19ee2fbe0
+	sha256sums = f4109b5a2b1b85cc79178e72ddbfe2db52f5656656121b333137ed5ca89d14ed
+	sha256sums = 85b86209e6923fb023bfc54094c6a83bcff747be5a53063637206b1876f48a39
+
+pkgname = goto-bin

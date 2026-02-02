@@ -1,0 +1,9 @@
+# makepkg artifacts
+*.pkg.tar.zst
+*.pkg.tar.xz
+src/
+pkg/
+goto-bin-*
+goto.bash-*
+goto.zsh-*
+goto.fish-*
