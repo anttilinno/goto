@@ -48,3 +48,23 @@ jobs:
             release/goto-linux-amd64
             release/checksums.txt
           generate_release_notes: true
+
+      - name: Update latest tag
+        run: |
+          git tag -f latest
+          git push -f origin latest
+
+      - name: Update latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Release (${{ github.ref_name }})
+          body: |
+            This release always points to the latest stable version.
+            Current version: ${{ github.ref_name }}
+
+            For version-specific releases, see the [releases page](https://github.com/${{ github.repository }}/releases).
+          files: |
+            release/goto-linux-amd64
+            release/checksums.txt
+          prerelease: false

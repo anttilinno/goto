@@ -18,7 +18,7 @@ Fast directory navigation with aliases. A Rust implementation inspired by [irida
 
 ```bash
 # Download and install
-curl -L https://github.com/anttilinno/goto/releases/latest/download/goto-linux-amd64 -o goto-bin
+curl -L https://github.com/anttilinno/goto/releases/download/latest/goto-linux-amd64 -o goto-bin
 chmod +x goto-bin && mv goto-bin ~/.local/bin/
 goto-bin --install
 
