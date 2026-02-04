@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Extract version from tag
         id: version
@@ -49,22 +51,21 @@ jobs:
             release/checksums.txt
           generate_release_notes: true
 
-      - name: Update latest tag
-        run: |
-          git tag -f latest
-          git push -f origin latest
-
       - name: Update latest release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: Latest Release (${{ github.ref_name }})
-          body: |
-            This release always points to the latest stable version.
-            Current version: ${{ github.ref_name }}
+        run: |
+          # Delete existing latest release if it exists
+          gh release delete latest --yes 2>/dev/null || true
+          # Delete existing latest tag if it exists
+          git push origin :refs/tags/latest 2>/dev/null || true
+          # Create new latest release pointing to current commit
+          gh release create latest \
+            --title "Latest Release (${{ github.ref_name }})" \
+            --notes "This release always points to the latest stable version.
 
-            For version-specific releases, see the [releases page](https://github.com/${{ github.repository }}/releases).
-          files: |
-            release/goto-linux-amd64
+          Current version: ${{ github.ref_name }}
+
+          For version-specific releases, see the [releases page](https://github.com/${{ github.repository }}/releases)." \
+            release/goto-linux-amd64 \
             release/checksums.txt
-          prerelease: false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
