@@ -818,7 +818,7 @@ fn test_tag_and_untag() {
     // Add tag
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "proj", "important"]);
+    cmd.args(["proj", "--tag", "important"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -841,7 +841,7 @@ fn test_tag_and_untag() {
     // Remove tag
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--untag", "proj", "important"]);
+    cmd.args(["proj", "--untag", "important"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -1076,7 +1076,7 @@ fn test_tag_management() {
     // Add a tag to the alias (use --force for new tag)
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "personal", "home", "--force"]);
+    cmd.args(["personal", "--tag", "home", "--force"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -1099,7 +1099,7 @@ fn test_tag_management() {
     // Step 4: Remove the 'daily' tag from work
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--untag", "work", "daily"]);
+    cmd.args(["work", "--untag", "daily"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -1154,7 +1154,7 @@ fn test_tag_management() {
     // Use --force for new tag
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "personal", "WORK", "--force"]);
+    cmd.args(["personal", "--tag", "WORK", "--force"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -1178,7 +1178,7 @@ fn test_tag_management() {
     // Test adding duplicate tag (same tag twice) - should not create duplicates
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "work", "office"]); // 'office' already exists on 'work'
+    cmd.args(["work", "--tag", "office"]); // 'office' already exists on 'work'
     let _output = cmd.output().unwrap();
     // This might succeed (no-op) or fail depending on implementation
     // Let's verify there's only one 'office' tag in the tags list
@@ -1663,7 +1663,7 @@ fn test_tag_creation_with_force_flag() {
     // Add new tag with --force - should succeed without prompting
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "proj", "newtag", "--force"]);
+    cmd.args(["proj", "--tag", "newtag", "--force"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -1715,7 +1715,7 @@ fn test_tag_creation_first_tag_no_confirmation() {
     // but when no tags exist, confirmation is skipped
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "proj", "firsttag"]);
+    cmd.args(["proj", "--tag", "firsttag"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -1767,7 +1767,7 @@ fn test_tag_creation_denied_in_non_interactive() {
     // Should fail because confirm() returns false (default) in non-terminal
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "proj", "newtag"]);
+    cmd.args(["proj", "--tag", "newtag"]);
     let output = cmd.output().unwrap();
     assert!(
         !output.status.success(),
@@ -1909,7 +1909,7 @@ fn test_tag_shorthand_force_flag() {
     // Add new tag with -f - should succeed
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "proj", "newtag", "-f"]);
+    cmd.args(["proj", "--tag", "newtag", "-f"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
@@ -2291,7 +2291,7 @@ fn test_rename_tag_merge() {
     // Add "job" to proj1 as well so we can test merge doesn't duplicate
     let mut cmd = goto_bin();
     cmd.env("GOTO_DB", &db_dir);
-    cmd.args(["--tag", "proj1", "job"]);
+    cmd.args(["proj1", "--tag", "job"]);
     let output = cmd.output().unwrap();
     assert!(
         output.status.success(),

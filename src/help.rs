@@ -279,13 +279,13 @@ pub static COMMANDS: &[CommandHelp] = &[
         description: "Add a tag to an alias",
         detailed: "Adds a tag to an existing alias. If the tag doesn't exist yet, \
                    you'll be prompted to confirm. Use --force to skip confirmation.",
-        usage: "goto --tag <alias> <tag> [--force]",
+        usage: "goto <alias> --tag <tag> [--force]",
         options: &[
             CommandOption { flag: "-f, --force", description: "Skip confirmation for new tags" },
         ],
         examples: &[
-            Example { description: "Add tag to alias", command: "goto --tag myproject work" },
-            Example { description: "Add new tag without confirmation", command: "goto --tag myproject newtag -f" },
+            Example { description: "Add tag to alias", command: "goto myproject --tag work" },
+            Example { description: "Add new tag without confirmation", command: "goto myproject --tag newtag -f" },
         ],
         see_also: &["--untag", "--tags", "--register"],
         category: CommandCategory::Management,
@@ -311,10 +311,10 @@ pub static COMMANDS: &[CommandHelp] = &[
         description: "Remove a tag from an alias",
         detailed: "Removes a specific tag from an alias. The tag itself may still exist \
                    on other aliases.",
-        usage: "goto --untag <alias> <tag>",
+        usage: "goto <alias> --untag <tag>",
         options: &[],
         examples: &[
-            Example { description: "Remove tag from alias", command: "goto --untag myproject oldtag" },
+            Example { description: "Remove tag from alias", command: "goto myproject --untag oldtag" },
         ],
         see_also: &["--tag", "--tags"],
         category: CommandCategory::Management,

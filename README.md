@@ -37,7 +37,7 @@ goto -r <alias> [path]              # Register alias
 goto -u <alias>                     # Unregister alias
 goto -l                             # List aliases
 goto -l -t <tag>                    # Filter by tag
-goto --tag <alias> <tag>            # Add tag
+goto <alias> --tag <tag>            # Add tag
 goto -p <alias>                     # Push to stack and navigate
 goto -o                             # Pop from stack
 goto --stats                        # Usage statistics

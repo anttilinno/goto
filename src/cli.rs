@@ -188,28 +188,6 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             }
         }
 
-        "--tag" => {
-            if args.len() < 4 {
-                return Err("Usage: goto --tag <alias> <tag> [--force]".to_string());
-            }
-            let force = args.iter().any(|a| a == "--force" || a == "-f");
-            Command::Tag {
-                alias: args[2].clone(),
-                tag: args[3].clone(),
-                force,
-            }
-        }
-
-        "--untag" => {
-            if args.len() < 4 {
-                return Err("Usage: goto --untag <alias> <tag>".to_string());
-            }
-            Command::Untag {
-                alias: args[2].clone(),
-                tag: args[3].clone(),
-            }
-        }
-
         "--rename-tag" => {
             if args.len() < 4 {
                 return Err("Usage: goto --rename-tag <old-tag> <new-tag> [--dry-run] [--force]".to_string());
@@ -296,6 +274,31 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             if arg.starts_with('-') {
                 return Err(format!("Unknown option: {}", arg));
             }
+            // Check for subcommand flags after the alias name
+            // e.g. "goto argo --tag begin" or "goto argo --untag begin"
+            if args.len() >= 4 {
+                match args[2].as_str() {
+                    "--tag" => {
+                        let force = args.iter().any(|a| a == "--force" || a == "-f");
+                        return Ok(Args {
+                            command: Command::Tag {
+                                alias: arg.clone(),
+                                tag: args[3].clone(),
+                                force,
+                            },
+                        });
+                    }
+                    "--untag" => {
+                        return Ok(Args {
+                            command: Command::Untag {
+                                alias: arg.clone(),
+                                tag: args[3].clone(),
+                            },
+                        });
+                    }
+                    _ => {}
+                }
+            }
             // Default action: navigate to alias
             Command::Navigate {
                 alias: arg.clone(),
@@ -347,9 +350,9 @@ Usage:
   goto -p <alias>                 Push current dir, goto alias
   goto -o                         Pop and return to directory
   goto --rename <old> <new>       Rename an alias
-  goto --tag <alias> <tag>        Add tag to alias
-  goto --tag <alias> <tag> -f     Add tag without confirmation
-  goto --untag <alias> <tag>      Remove tag from alias
+  goto <alias> --tag <tag>        Add tag to alias
+  goto <alias> --tag <tag> -f    Add tag without confirmation
+  goto <alias> --untag <tag>     Remove tag from alias
   goto --rename-tag <old> <new>   Rename tag across all aliases
   goto --rename-tag old new -f    Rename without confirmation
   goto --rename-tag old new --dry-run  Preview changes only
@@ -400,8 +403,8 @@ Examples:
   goto dev                        Navigate to ~/Development
   goto -l --sort=usage            List aliases by usage
   goto -l --filter=work           List aliases tagged 'work'
-  goto --tag dev golang           Add 'golang' tag to 'dev'
-  goto --untag dev golang         Remove 'golang' tag from 'dev'
+  goto dev --tag golang           Add 'golang' tag to 'dev'
+  goto dev --untag golang         Remove 'golang' tag from 'dev'
   goto -T                         List all tags with counts
   goto -s                         Show usage statistics
   goto -R                         Show recently visited aliases
@@ -623,7 +626,7 @@ mod tests {
     // Tag commands tests
     #[test]
     fn test_parse_tag() {
-        let result = parse_args(&args(&["goto", "--tag", "proj", "work"]));
+        let result = parse_args(&args(&["goto", "proj", "--tag", "work"]));
         assert!(result.is_ok());
         if let Command::Tag { alias, tag, force } = result.unwrap().command {
             assert_eq!(alias, "proj");
@@ -635,15 +638,15 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_tag_missing_args() {
-        let result = parse_args(&args(&["goto", "--tag", "proj"]));
+    fn test_parse_tag_as_first_arg_is_unknown() {
+        let result = parse_args(&args(&["goto", "--tag", "proj", "work"]));
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Usage:"));
+        assert!(result.unwrap_err().contains("Unknown option"));
     }
 
     #[test]
     fn test_parse_tag_with_force() {
-        let result = parse_args(&args(&["goto", "--tag", "proj", "work", "--force"]));
+        let result = parse_args(&args(&["goto", "proj", "--tag", "work", "--force"]));
         assert!(result.is_ok());
         if let Command::Tag { alias, tag, force } = result.unwrap().command {
             assert_eq!(alias, "proj");
@@ -656,7 +659,7 @@ mod tests {
 
     #[test]
     fn test_parse_tag_with_short_force() {
-        let result = parse_args(&args(&["goto", "--tag", "proj", "work", "-f"]));
+        let result = parse_args(&args(&["goto", "proj", "--tag", "work", "-f"]));
         assert!(result.is_ok());
         if let Command::Tag { alias, tag, force } = result.unwrap().command {
             assert_eq!(alias, "proj");
@@ -669,7 +672,7 @@ mod tests {
 
     #[test]
     fn test_parse_untag() {
-        let result = parse_args(&args(&["goto", "--untag", "proj", "work"]));
+        let result = parse_args(&args(&["goto", "proj", "--untag", "work"]));
         assert!(result.is_ok());
         if let Command::Untag { alias, tag } = result.unwrap().command {
             assert_eq!(alias, "proj");
@@ -680,10 +683,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_untag_missing_args() {
-        let result = parse_args(&args(&["goto", "--untag", "proj"]));
+    fn test_parse_untag_as_first_arg_is_unknown() {
+        let result = parse_args(&args(&["goto", "--untag", "proj", "work"]));
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Usage:"));
+        assert!(result.unwrap_err().contains("Unknown option"));
     }
 
     #[test]

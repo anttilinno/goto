@@ -68,13 +68,13 @@ goto --names-only                   # Just names (for scripting/completion)
 ### Add tag
 
 ```bash
-goto --tag <alias> <tag>            # Add tag to alias
+goto <alias> --tag <tag>            # Add tag to alias
 ```
 
 ### Remove tag
 
 ```bash
-goto --untag <alias> <tag>          # Remove tag from alias
+goto <alias> --untag <tag>          # Remove tag from alias
 ```
 
 ### List tags
