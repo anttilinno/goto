@@ -319,7 +319,7 @@ dependencies = [
 
 [[package]]
 name = "goto"
-version = "1.9.2"
+version = "2.2.1"
 dependencies = [
  "chrono",
  "comfy-table",
